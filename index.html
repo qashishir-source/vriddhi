@@ -4951,8 +4951,8 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
     const def = f.id === "roi" ? `<div class="hf1 fh-defrow"><label class="fh-def" for="fh-defalloc"><input type="checkbox" id="fh-defalloc"${FH.defAlloc ? " checked" : ""} aria-describedby="fh-defalloc-h"><span>Auto-allocate Corpus</span></label>` +
       `<small id="fh-defalloc-h">${esc(allocHint())}</small></div>` : "";
     return `<div class="hf1"${f.child && f.panel !== "college" && f.panel !== "weddings" ? ` data-fh-cond="${f.child}"` : ""}>` +
-      `<label for="${id}">${label}</label>${ctl}${amt}${hint ? `<small class="hh">${esc(f.help)}</small>` : ""}` +
-      `<small class="er fh-err" id="${id}-e" role="alert"></small></div>${def}`;
+      `${f.id === "corpus" ? hpHead(id, label) : `<label for="${id}">${label}</label>`}${ctl}${amt}${hint ? `<small class="hh">${esc(f.help)}</small>` : ""}` +
+      `<small class="er fh-err" id="${id}-e" role="alert"></small>${f.id === "corpus" ? '<div id="fh-hold" class="fh-hold" hidden></div>' : ""}</div>${def}`;
   }
   /* Planning period strip (build 78): Today -> Retirement -> Plan ends, with the earning amounts. Used on Plan Input, Summary and Reports. */
   function ptHTML(v, slim) {
@@ -5047,7 +5047,7 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
 <div id="fh-wizard">
 <div class="fh-top"><span id="fh-count">Step 1 of 6</span><span>* required</span></div>
 <div class="wzt fh-wzt" id="fh-nav" role="tablist" aria-label="Planning steps"></div>
-<p class="fh-note" id="fh-note"><b>Returns and inflation rates are assumptions</b> you can edit, not predictions or guarantees. This pop-up uses its own simple model and never reads or changes your holdings.</p>
+<p class="fh-note" id="fh-note"><b>Returns and inflation rates are assumptions</b> you can edit, not predictions or guarantees. This pop-up uses its own simple model. It reads your Goal Planner holdings only when you tick them under Current Corpus, and never changes them.</p>
 ${panel("family", `<div class="fh-fam"><div class="hs">` + grid(f => f.panel === "family" && f.child === null).replace('class="hg"', 'class="hg fh-g2"') +
   [1, 2].map(c => `<div class="fh-crow" data-fh-cond="${c}"><span class="fh-cn">Child ${c}</span>${FHE.FIELDS.filter(f => f.panel === "family" && f.child === c).map(fieldHTML).join("")}</div>`).join("") + `<p class="hh fh-stg-note" data-fh-cond-any>Stage: pick School and enter the Class (1–12), or College 1–4 for the year of a 4-year course. College years fill &ldquo;years of college fees left&rdquo; on the College step.</p></div></div>`)}
 ${panel("planning", `<div class="fh-plan"><div class="fh-ph"><h3>Retirement Timeline</h3><span class="fh-badge" id="fh-horizon"></span></div><div id="fh-pt" class="fh-ptw"></div>` +
@@ -6552,6 +6552,7 @@ ${acc("alloc", "Fund allocation", "today and by age", `<div id="dsh" class="fh-d
     if (typeof save === "function") save();
     FH.v = null; FH.step = "family"; FH.house = "expenses"; FH.plan = "ready"; FH.incEdit = 0; FH.incNew = 0; FH.incUndo = null; FH.sel = { college: 1, weddings: 1 }; FH.sig = ""; FH.mode = "wizard"; FH.doneAt = 0;
     memo = { key: "", r: null }; simAge = null; RPT.tab = null;
+    hpReset();
     syncFromState();
     if (toPlan) RP.tab = "status";
     if (typeof render === "function") render();
@@ -6582,7 +6583,7 @@ ${acc("alloc", "Fund allocation", "today and by age", `<div id="dsh" class="fh-d
     const src = P.profiles[id]; let nm = fhpName(src.name + " (copy)"), i = 2;
     while (fhpTaken(nm, P)) nm = fhpName(src.name).slice(0, 24) + " (copy " + i++ + ")";
     const nid = fhpUniqueId(nm, P);
-    P.profiles[nid] = { name: nm, v: src.v ? Object.assign({}, src.v) : null, t: src.t || 0, rep: src.rep ? 1 : 0, created: Date.now() };
+    P.profiles[nid] = { name: nm, v: src.v ? Object.assign({}, src.v) : null, t: src.t || 0, rep: src.rep ? 1 : 0, hold: src.hold ? JSON.parse(JSON.stringify(src.hold)) : undefined, created: Date.now() };
     if (typeof save === "function") save(); if (typeof render === "function") render();
     return nm;
   }
@@ -6637,6 +6638,99 @@ ${acc("alloc", "Fund allocation", "today and by age", `<div id="dsh" class="fh-d
     el.innerHTML = fhpBarHTML(true);
   };
   /* the same control: in the top bar (id fhp-sel) and, on phones where the top bar has no room, at the top of the page */
+  /* ---- Current Corpus from Goal Planner holdings: "View holdings" link on the Current Corpus field.
+     The holdings of the Goal Planner client with the same name are listed with check boxes; the ticked ones add up to Current Corpus.
+     Read-only for the Goal Planner. The ticked ids are kept on the Retirement client (S.fhp.profiles[id].hold), inside the existing saved state. ---- */
+  const HP = { open: false };
+  const hpM = x => { const M0 = typeof cr === "function" ? cr : FHE.currency; return String(M0(x)).replace("\u20b9 ", "\u20b9"); };
+  function hpHead(id, label) {
+    return `<div class="fh-hrow"><label for="${id}">${label}</label><button type="button" class="fh-hlink" data-fh-hold="toggle" aria-expanded="false" aria-controls="fh-hold">View holdings</button></div>`;
+  }
+  function hpState() {
+    const P = fhpEnsure(); if (!P) return null;
+    const pr = P.profiles[P.active], L = typeof window.gppHoldingList === "function" ? window.gppHoldingList() : [];
+    const h = pr.hold && typeof pr.hold === "object" ? pr.hold : {}, nm = String(pr.name || "").trim().toLowerCase();
+    const cl = (h.gp ? L.find(c => c.id === h.gp) : null) || L.find(c => String(c.name).trim().toLowerCase() === nm) || null;
+    const ids = cl && h.gp === cl.id && Array.isArray(h.ids) ? h.ids.map(String) : [];
+    return { pr, L, cl, ids };
+  }
+  const hpTotal = (cl, ids) => cl.items.reduce((t, i) => t + (ids.includes(i.id) ? i.val : 0), 0);
+  function hpSave(st, ids) { st.pr.hold = { gp: st.cl.id, ids: ids.slice() }; if (typeof save === "function") save(); }
+  function hpApply(total) {                       // same steps as typing a new value into the Current Corpus box
+    setField("corpus", Math.round(total));
+    const a = $("corpus-amt"); if (a) a.textContent = amtText(FH.v.corpus);
+    if (FH.mode === "done") FH.mode = "wizard";
+    updateLive();
+    if (FH.defAlloc) applyDefaultAllocation();
+  }
+  function hpRender() {
+    const box = document.getElementById("fh-hold"), btn = document.querySelector('[data-fh-hold="toggle"]');
+    if (btn) { btn.setAttribute("aria-expanded", String(HP.open)); btn.textContent = HP.open ? "Hide holdings" : "View holdings"; }
+    if (!box) return;
+    box.hidden = !HP.open; if (!HP.open) return;
+    const st = hpState(); if (!st) { box.innerHTML = ""; return; }
+    const pick = st.L.length > 1 || (st.L.length && !st.cl) ? `<label class="fh-hpk">Goal Planner client <select id="fh-hold-pick">${st.cl ? "" : '<option value="">Choose a client</option>'}${st.L.map(c => `<option value="${esc(c.id)}"${st.cl && c.id === st.cl.id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : "";
+    let body;
+    if (!st.L.length) body = `<p class="fh-hmsg">No Goal Planner clients were found.</p>`;
+    else if (!st.cl) body = `<p class="fh-hmsg">No Goal Planner client is named \u201c${esc(st.pr.name)}\u201d. Choose the client above.</p>`;
+    else if (!st.cl.items.length) body = `<p class="fh-hmsg">${esc(st.cl.name)} has no holdings in the Goal Planner yet.</p>`;
+    else {
+      const on = new Set(st.ids), all = st.cl.items.every(i => on.has(i.id)), tot = hpTotal(st.cl, st.ids), cur = Number(FH.v.corpus), n = st.cl.items.filter(i => on.has(i.id)).length;
+      const rows = st.cl.items.map(i => `<tr><td><input type="checkbox" class="fh-hold-cb" data-hid="${esc(i.id)}" aria-label="Include ${esc(i.name)}"${on.has(i.id) ? " checked" : ""}></td><td>${esc(i.name)}</td><td>${esc(i.cat)}</td><td class="fh-n" title="\u20b9 ${Math.round(i.val).toLocaleString("en-IN")}">${hpM(i.val)}</td></tr>`).join("");
+      const differs = n > 0 && Math.round(cur) !== Math.round(tot);
+      body = `<div class="fh-htw"><table class="fh-ht"><thead><tr><th><input type="checkbox" id="fh-hold-all" aria-label="Select all holdings"${all ? " checked" : ""}></th><th>Holding</th><th>Category</th><th class="fh-n">Current value</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+        `<div class="fh-hf"><span>${n} of ${st.cl.items.length} selected \u00b7 <b>${hpM(tot)}</b></span>${differs ? `<button type="button" class="fh-happly" data-fh-hold="apply">Use ${hpM(tot)} as Current Corpus</button>` : n ? `<span>Current Corpus matches</span>` : ""}</div>` +
+        `<small class="hh">Today\u2019s values from the Goal Planner. Ticking a holding sets Current Corpus to the selected total; you can still type over the box. Nothing in the Goal Planner is changed.</small>`;
+    }
+    box.innerHTML = pick + body;
+  }
+  function hpReset() { HP.open = false; hpRender(); }
+  document.addEventListener("click", e => {
+    const b = e.target.closest && e.target.closest("[data-fh-hold]"); if (!b) return;
+    if (b.dataset.fhHold === "toggle") { HP.open = !HP.open; hpRender(); }
+    else if (b.dataset.fhHold === "apply") { const st = hpState(); if (st && st.cl) hpApply(hpTotal(st.cl, st.ids)); hpRender(); }
+  });
+  document.addEventListener("change", e => {
+    const t = e.target; if (!t) return;
+    const cb = !!(t.classList && t.classList.contains("fh-hold-cb")), all = t.id === "fh-hold-all", pick = t.id === "fh-hold-pick";
+    if (!cb && !all && !pick) return;
+    const st = hpState(); if (!st) return;
+    const box = document.getElementById("fh-hold"), hid = cb ? t.dataset.hid : null;
+    if (pick) {
+      const c = st.L.find(x => x.id === t.value);
+      if (c) { st.pr.hold = { gp: c.id, ids: [] }; if (typeof save === "function") save(); }
+      hpRender(); const p = document.getElementById("fh-hold-pick"); if (p) p.focus(); return;
+    }
+    if (!st.cl || !box) return;
+    const ids = all ? (t.checked ? st.cl.items.map(i => i.id) : []) : Array.from(box.querySelectorAll(".fh-hold-cb:checked")).map(x => x.dataset.hid);
+    hpSave(st, ids); hpApply(hpTotal(st.cl, ids)); hpRender();
+    const again = all ? document.getElementById("fh-hold-all") : Array.from(box.querySelectorAll(".fh-hold-cb")).find(x => x.dataset.hid === hid);
+    if (again) again.focus();
+  });
+  document.addEventListener("input", e => { if (HP.open && e.target && e.target.id === "fh-corpus") hpRender(); });   // typing over the box refreshes the "matches" line
+  (function () {
+    if (document.getElementById("fh-hold-css")) return;
+    const s = document.createElement("style"); s.id = "fh-hold-css";
+    s.textContent = `.fh-hrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.fh-hlink{background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--ac,#0f766e);text-decoration:underline;cursor:pointer;width:auto}
+.fh-hold{margin-top:8px;border:1px solid color-mix(in srgb,currentColor 22%,transparent);border-radius:8px;padding:12px}
+.fh-hold[hidden]{display:none}
+.hf1:has(>.fh-hold:not([hidden])){grid-column:1/-1}
+.fh-hpk{display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:8px}
+.fh-hpk select{width:auto;max-width:100%}
+.fh-htw{max-height:240px;overflow:auto}
+.fh-ht{width:100%;min-width:0!important;border-collapse:collapse;font-size:13px}
+.fh-ht td,.fh-ht th{white-space:normal}
+.fh-ht th,.fh-ht td{padding:6px 6px;text-align:left;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent)}
+.fh-ht .fh-n{text-align:right;white-space:nowrap!important;width:auto;min-width:0}
+.fh-ht th:first-child,.fh-ht td:first-child{width:28px;min-width:0;padding-left:4px;padding-right:4px}
+.fh-ht input[type=checkbox]{width:16px;min-width:16px;height:16px;padding:0;margin:0}
+.fh-hf{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;font-size:13px;flex-wrap:wrap}
+.fh-happly{width:auto;padding:4px 10px;font-size:12px;cursor:pointer}
+.fh-hmsg{margin:0;font-size:13px}`;
+    document.head.appendChild(s);
+  })();
+
   function fhpBarHTML(top) {
     return `<label class="fhp-l" for="${top ? "fhp-sel" : "fhp-sel-m"}">Client</label><select ${top ? 'id="fhp-sel"' : 'id="fhp-sel-m"'} class="fhp-sel" aria-label="Switch client">${fhpList().map(p => `<option value="${esc(p.id)}"${p.active ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select><button type="button" class="fhp-add" data-fhp="add">+ Add Person</button>`;
   }
@@ -6819,6 +6913,11 @@ window.gppHeroInner=function(){const P=ensure();if(!P)return'';const p=P.profile
   const ini=nm.split(/\s+/).filter(Boolean).slice(0,2).map(w=>Array.from(w)[0].toUpperCase()).join('');
   return'<div class="dz-who"><span class="fhp-av sm" aria-hidden="true">'+esc(ini)+'</span><div class="fhp-ht"><span class="fhp-eb">Goal plan prepared for</span><div class="dz-nr"><h2 class="fhp-nm sm">'+esc(nm)+'</h2>'+(bits.length?'<span class="fhp-sub">'+bits.join(' \u00b7 ')+'</span>':'')+'</div></div></div>'};
 window.gppMBar=function(){return typeof S!=='undefined'&&ensure()?'<div class="fhp fhp-m">'+window.gppBarHTML(false)+'</div>':''};
+window.gppHoldingList=function(){/* read-only: every Goal Planner client with today's value of each holding (the same numbers as Current Corpus on the Goal Planner summary) */
+  const P=ensure();if(!P)return[];window.gppSync();
+  return Object.keys(P.profiles).map(function(id){const p=P.profiles[id];let items=[];
+    try{const d=JSON.parse(JSON.stringify(p.d)),D=calc(d);items=(d.assets||[]).map(function(x,i){return{id:String(x.id),name:String(x.name||'Holding'),cat:String(x.cat||''),val:Math.round(+D.rows[0].v[i]||0)}})}catch(e){items=[]}
+    return{id:id,name:p.name,active:id===P.active,items:items}})};
 
 function metrics(p){
   if(!p.d.assets.length)return null;
