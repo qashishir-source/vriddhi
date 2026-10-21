@@ -73,8 +73,8 @@ async function snapGet(id){if(!SNID.test(String(id||'')))throw new Error('Bad sn
 async function snapCreate(o){var s=await token(),r=await rest('vr_holding_snapshots?select=id,created_at',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:s.uid,label:String(o.label||'').slice(0,120),note:String(o.note||'').slice(0,500),plan:String(o.plan||'').slice(0,120),holdings_count:Math.max(0,Math.round(+o.count||0)),total_value:+o.total||0,data:o.data})}),a=await r.json();return a[0]}
 async function snapRemove(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token();await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid,{method:'DELETE',headers:{Prefer:'return=minimal'}})}
 /* the version shown in the header and on the sign-in screen: change it here only */
-window.VR_VERSION='2.3.0'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
-window.VR_BUILD_NO=108; window.VR_BUILD_DATE='2026-10-21'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
+window.VR_VERSION='2.3.1'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
+window.VR_BUILD_NO=109; window.VR_BUILD_DATE='2026-10-21'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
 document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg')){var host=f.querySelector('.lform')||f;host.insertAdjacentHTML('beforeend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')}});
 window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,snap:{list:snapList,get:snapGet,create:snapCreate,remove:snapRemove},email:function(){var s=ses();return s&&s.email||''}}:null;
 /* clients (non-advisers) do not see the Users tab */
@@ -8105,14 +8105,14 @@ html body #lg label.lgsv span{line-height:1.2}
  html:not(#vrx) body header.hd .wm{font-size:18px;font-weight:700;line-height:1.1;white-space:nowrap}
  html:not(#vrx) body header.hd .wm .vr-ver{display:block;margin:3px 0 0;font-size:10.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis}
  html:not(#vrx) body header.hd .tg,html:not(#vrx) body header.hd .fhp{display:none!important}
- html:not(#vrx) body header.hd #who{grid-area:who;font-size:0!important;width:36px;height:36px;padding:0!important;max-width:none!important;border-radius:50%!important;display:grid;place-items:center;overflow:hidden;color:inherit!important;background:color-mix(in srgb,currentColor 14%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important}
+ html:not(#vrx) body header.hd #who{grid-area:who;font-size:0!important;width:38px;height:38px;padding:0!important;max-width:none!important;border-radius:50%!important;display:grid;place-items:center;overflow:hidden;color:inherit!important;background:color-mix(in srgb,currentColor 14%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important}
  html:not(#vrx) body header.hd #who::before{content:attr(data-ini);font-size:14px;font-weight:700;line-height:1}
  html:not(#vrx) body header.hd #who[hidden]{display:none!important}
- html:not(#vrx) body header.hd :is(#vr-cp,#so){height:36px;min-height:36px!important;margin:0!important;border-radius:10px!important;display:inline-flex!important;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:inherit!important;background:color-mix(in srgb,currentColor 10%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important;box-shadow:none!important;font-weight:600}
- html:not(#vrx) body header.hd #vr-cp{grid-area:cp;font-size:0!important;width:36px;padding:0!important}
+ html:not(#vrx) body header.hd :is(#vr-cp,#so){height:38px;min-height:38px!important;margin:0!important;border-radius:10px!important;display:inline-flex!important;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:inherit!important;background:color-mix(in srgb,currentColor 10%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important;box-shadow:none!important;font-weight:600}
+ html:not(#vrx) body header.hd #vr-cp{grid-area:cp;font-size:0!important;width:38px;padding:0!important}
  html:not(#vrx) body header.hd #vr-cp::before{content:"";display:block;width:18px;height:18px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5'/%3E%3C/svg%3E") center/contain no-repeat}
- html:not(#vrx) body header.hd #so{grid-area:so;font-size:13px!important;padding:0 12px!important;width:auto;min-width:0!important}
- html:not(#vrx) body header.hd #so::before{margin:0!important;width:16px!important;height:16px!important;background:currentColor!important}
+ html:not(#vrx) body header.hd #so{grid-area:so;font-size:0!important;width:38px;padding:0!important;min-width:0!important}
+ html:not(#vrx) body header.hd #so::before{margin:0!important;width:20px!important;height:20px!important;background:currentColor!important}
  html[data-uic=off]:not(#vrx) body header.hd #vr-cp{font-size:12px!important;width:auto;padding:0 10px!important}
  html[data-uic=off]:not(#vrx) body header.hd #vr-cp::before{display:none}
  html:not(#vrx) body header.hd nav{grid-area:nav;display:flex!important;gap:0!important;width:100%!important;margin:0!important;padding:0!important;border:0!important;border-top:1px solid color-mix(in srgb,currentColor 16%,transparent)!important;border-radius:0!important;background:none!important;box-shadow:none!important;overflow-x:auto;position:static!important}
@@ -8123,11 +8123,17 @@ html body #lg label.lgsv span{line-height:1.2}
 @media (max-width:380px){
  html:not(#vrx) body header.hd #who{display:none!important}
 }
-@media (max-width:359px){
- html:not(#vrx) body header.hd #so{font-size:0!important;width:36px;padding:0!important}
+
+@media (max-width:720px){
+ html:not(#vrx) body #lk-sw{bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
+ html[data-skin=enterprise]:not(#vrx) body .msd-b{justify-content:space-between!important;min-height:44px!important;padding:0 14px!important;text-align:left!important;color:var(--tx)!important;background:var(--card)!important;border:1px solid color-mix(in srgb,currentColor 24%,transparent)!important;border-radius:8px!important}
+ html[data-skin=enterprise]:not(#vrx) body .tb{justify-content:flex-start!important;align-items:stretch!important;gap:10px!important}
+ html[data-skin=enterprise]:not(#vrx) body .tb>:is(input,select,button){min-height:44px!important;box-sizing:border-box}
+ html[data-skin=enterprise]:not(#vrx) body .tb>button{min-width:44px!important;padding:0 10px!important;color:var(--tx)!important;background:var(--card)!important;border:1px solid color-mix(in srgb,currentColor 24%,transparent)!important;border-radius:8px!important}
 }
 </style>
 <script>/* initial letter shown in the round account badge on phones (the full email stays in the tooltip) */
 (function(){var w=document.getElementById('who');if(!w)return;function ini(){var t=(w.textContent||'').replace(/[^\p{L}\p{N}@._-]+/gu,' ').trim();w.dataset.ini=(t.charAt(0)||'?').toUpperCase();w.title=t?'Signed in as '+t:'Signed in'}ini();try{new MutationObserver(ini).observe(w,{childList:true,characterData:true,subtree:true})}catch(e){}})();
+(function(){var so=document.getElementById('so');if(so){so.title='Sign out';so.setAttribute('aria-label','Sign out')}})();
 </script>
 </body></html>
