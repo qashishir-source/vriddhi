@@ -73,9 +73,9 @@ async function snapGet(id){if(!SNID.test(String(id||'')))throw new Error('Bad sn
 async function snapCreate(o){var s=await token(),r=await rest('vr_holding_snapshots?select=id,created_at',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:s.uid,label:String(o.label||'').slice(0,120),note:String(o.note||'').slice(0,500),plan:String(o.plan||'').slice(0,120),holdings_count:Math.max(0,Math.round(+o.count||0)),total_value:+o.total||0,data:o.data})}),a=await r.json();return a[0]}
 async function snapRemove(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token();await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid,{method:'DELETE',headers:{Prefer:'return=minimal'}})}
 /* the version shown in the header and on the sign-in screen: change it here only */
-window.VR_VERSION='2.2.4'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
-window.VR_BUILD_NO=106; window.VR_BUILD_DATE='2026-10-20'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
-document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg'))f.insertAdjacentHTML('afterend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')});
+window.VR_VERSION='2.3.0'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
+window.VR_BUILD_NO=108; window.VR_BUILD_DATE='2026-10-21'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
+document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg')){var host=f.querySelector('.lform')||f;host.insertAdjacentHTML('beforeend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')}});
 window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,snap:{list:snapList,get:snapGet,create:snapCreate,remove:snapRemove},email:function(){var s=ses();return s&&s.email||''}}:null;
 /* clients (non-advisers) do not see the Users tab */
 if(cfgOk&&ses()&&ses().rt){isAdviser().then(function(v){window.VR_ADV=v;if(v===false)document.documentElement.classList.add('vr-client')})}
@@ -2104,6 +2104,8 @@ return`<div class="ordbar"><button type="button" id="ordb">Reorder sections</but
 <div id="d2">${d2(c)}</div></div>`}
 function dzFill(){const r=$('#ra');if(!r)return;const mn=+r.min,mxv=+r.max,pc=mxv>mn?(+r.value-mn)/(mxv-mn)*100:0;r.style.background='linear-gradient(to right,var(--acb) 0%,var(--acb) '+pc+'%,var(--bd) '+pc+'%,var(--bd) 100%)'}
 function dupd(){const c=ctx();$('#d1').innerHTML=tr(d1(c),1);const e3=$('#d3');if(e3)e3.innerHTML=tr(d3(c),1);$('#d2').innerHTML=tr(d2(c),1);const rl=$('#rl');if(rl)rl.innerHTML=tr(rlText(c),1);const a0=S.members[0].age,mx=a0+c.R.length-1,m=$('#rm'),q=$('#rp');if(m)m.disabled=S.ret<=a0+1;if(q)q.disabled=S.ret>=mx;dzFill();
+/* keep the banner (Age · retiring at · goal) in step with the slider, the +/- buttons and the goal box, not only after a full redraw */
+const hl=document.querySelector('.dz-hl'),hi=window.gppHeroInner&&gppHeroInner();if(hl&&hi)hl.innerHTML=tr(hi,1);
 const g=S.goal/1e7,gi=$('#goalcr');if(gi&&document.activeElement!==gi)gi.value=+g.toFixed(4);document.querySelectorAll('[data-gp]').forEach(b=>b.setAttribute('aria-pressed',Math.abs(g-+b.dataset.gp)<.0005))}
 function stepRet(d){const a0=S.members[0].age,mx=a0+calc(S).rows.length-1;S.ret=S.retP=Math.min(mx,Math.max(a0+1,S.ret+d));save();const r=$('#ra');if(r)r.value=S.ret;dupd()}
 
@@ -7994,7 +7996,7 @@ window.usersTab=function(){
  if(window.VRSB&&!st.loading&&(st.users===null||Date.now()-st.t>5000))setTimeout(load,0);
  return '<div class="card"><div id="vr-um">'+body()+'</div></div>'};
 })();</script>
-<style>html body .hd .vr-ver{color:#fff;opacity:.85}
+<style>html body .hd .vr-ver{color:inherit;opacity:.78}
 .vr-ver{font-size:11px;font-weight:600;color:var(--mu);white-space:nowrap;margin-left:4px;vertical-align:middle;letter-spacing:.2px}.vr-ver-lg{text-align:center;font-size:11px;color:var(--mu);margin:14px 0 0}
 #vr-cp{margin-left:6px;min-height:0;padding:5px 9px;font-size:12px;border-radius:99px;white-space:nowrap}
 #vr-cpm{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -8082,4 +8084,50 @@ window.snapUI=function(){if(!window.VRSB||!window.VRSB.snap||!window.vrHoldings)
  if(!st.loading&&(st.list===null||Date.now()-st.t>5000))setTimeout(load,0);
  return '<div class="card vr-sn" id="vr-snc"><div id="vr-sn">'+body()+'</div></div>'};
 })();</script>
+<style id="vr-ux-final">
+/* ===== build 108: login polish + one professional mobile header for every skin and theme ===== */
+html body #lg .lform .vr-ver-lg{margin:auto 0 0;padding-top:22px;text-align:center;font-size:11px;color:var(--mu)}
+html body #lg label.lgsv{display:flex;align-items:center;gap:10px;margin:16px 0 0;font-size:14px;color:var(--tx);cursor:pointer;position:static}
+html body #lg label.lgsv input{flex:none;width:18px;height:18px;min-width:18px;margin:0;padding:0;accent-color:var(--ac)}
+html body #lg label.lgsv span{line-height:1.2}
+@media (max-width:760px){
+ html body #lg .lform{padding:24px 22px 20px}
+ html body #lg .lform h1{font-size:24px}
+ html body #lg .lform .go{margin-top:18px}
+ html body #lg .er{min-height:0;margin:8px 0 0}
+}
+@media (max-width:720px){
+ html:not(#vrx) body header.hd .hdi{display:grid!important;grid-template-columns:minmax(0,1fr) auto auto auto;grid-template-areas:"brand who cp so" "nav nav nav nav";align-items:center;column-gap:8px;row-gap:6px;padding:8px 12px 0!important;max-width:none!important;min-height:0!important;flex-wrap:nowrap!important}
+ html:not(#vrx) body header.hd .hdi>*{margin:0!important}
+ html:not(#vrx) body header.hd .brand{grid-area:brand;min-width:0;display:flex!important;align-items:center;gap:10px;flex:none}
+ html:not(#vrx) body header.hd .brand>div:last-child{min-width:0}
+ html:not(#vrx) body header.hd .logo{width:38px;height:38px;flex:none}
+ html:not(#vrx) body header.hd .wm{font-size:18px;font-weight:700;line-height:1.1;white-space:nowrap}
+ html:not(#vrx) body header.hd .wm .vr-ver{display:block;margin:3px 0 0;font-size:10.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis}
+ html:not(#vrx) body header.hd .tg,html:not(#vrx) body header.hd .fhp{display:none!important}
+ html:not(#vrx) body header.hd #who{grid-area:who;font-size:0!important;width:36px;height:36px;padding:0!important;max-width:none!important;border-radius:50%!important;display:grid;place-items:center;overflow:hidden;color:inherit!important;background:color-mix(in srgb,currentColor 14%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important}
+ html:not(#vrx) body header.hd #who::before{content:attr(data-ini);font-size:14px;font-weight:700;line-height:1}
+ html:not(#vrx) body header.hd #who[hidden]{display:none!important}
+ html:not(#vrx) body header.hd :is(#vr-cp,#so){height:36px;min-height:36px!important;margin:0!important;border-radius:10px!important;display:inline-flex!important;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:inherit!important;background:color-mix(in srgb,currentColor 10%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important;box-shadow:none!important;font-weight:600}
+ html:not(#vrx) body header.hd #vr-cp{grid-area:cp;font-size:0!important;width:36px;padding:0!important}
+ html:not(#vrx) body header.hd #vr-cp::before{content:"";display:block;width:18px;height:18px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5'/%3E%3C/svg%3E") center/contain no-repeat}
+ html:not(#vrx) body header.hd #so{grid-area:so;font-size:13px!important;padding:0 12px!important;width:auto;min-width:0!important}
+ html:not(#vrx) body header.hd #so::before{margin:0!important;width:16px!important;height:16px!important;background:currentColor!important}
+ html[data-uic=off]:not(#vrx) body header.hd #vr-cp{font-size:12px!important;width:auto;padding:0 10px!important}
+ html[data-uic=off]:not(#vrx) body header.hd #vr-cp::before{display:none}
+ html:not(#vrx) body header.hd nav{grid-area:nav;display:flex!important;gap:0!important;width:100%!important;margin:0!important;padding:0!important;border:0!important;border-top:1px solid color-mix(in srgb,currentColor 16%,transparent)!important;border-radius:0!important;background:none!important;box-shadow:none!important;overflow-x:auto;position:static!important}
+ html:not(#vrx) body header.hd nav button{flex:1 1 0!important;min-width:0;height:auto!important;min-height:46px!important;padding:6px 4px!important;margin:0!important;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0!important;border-bottom:3px solid transparent!important;border-radius:0!important;background:none!important;box-shadow:none!important;color:inherit!important;opacity:.72;font-size:12px!important;font-weight:500;line-height:1.15;white-space:normal;text-align:center}
+ html:not(#vrx) body header.hd nav button::before{margin:0!important}
+ html:not(#vrx) body header.hd nav button[aria-current]{opacity:1;font-weight:700;border-bottom-color:currentColor!important;background:color-mix(in srgb,currentColor 10%,transparent)!important}
+}
+@media (max-width:380px){
+ html:not(#vrx) body header.hd #who{display:none!important}
+}
+@media (max-width:359px){
+ html:not(#vrx) body header.hd #so{font-size:0!important;width:36px;padding:0!important}
+}
+</style>
+<script>/* initial letter shown in the round account badge on phones (the full email stays in the tooltip) */
+(function(){var w=document.getElementById('who');if(!w)return;function ini(){var t=(w.textContent||'').replace(/[^\p{L}\p{N}@._-]+/gu,' ').trim();w.dataset.ini=(t.charAt(0)||'?').toUpperCase();w.title=t?'Signed in as '+t:'Signed in'}ini();try{new MutationObserver(ini).observe(w,{childList:true,characterData:true,subtree:true})}catch(e){}})();
+</script>
 </body></html>
