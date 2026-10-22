@@ -73,8 +73,8 @@ async function snapGet(id){if(!SNID.test(String(id||'')))throw new Error('Bad sn
 async function snapCreate(o){var s=await token(),r=await rest('vr_holding_snapshots?select=id,created_at',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:s.uid,label:String(o.label||'').slice(0,120),note:String(o.note||'').slice(0,500),plan:String(o.plan||'').slice(0,120),holdings_count:Math.max(0,Math.round(+o.count||0)),total_value:+o.total||0,data:o.data})}),a=await r.json();return a[0]}
 async function snapRemove(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token();await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid,{method:'DELETE',headers:{Prefer:'return=minimal'}})}
 /* the version shown in the header and on the sign-in screen: change it here only */
-window.VR_VERSION='2.3.1'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
-window.VR_BUILD_NO=109; window.VR_BUILD_DATE='2026-10-21'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
+window.VR_VERSION='2.5.0'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
+window.VR_BUILD_NO=111; window.VR_BUILD_DATE='2026-10-22'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
 document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg')){var host=f.querySelector('.lform')||f;host.insertAdjacentHTML('beforeend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')}});
 window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,snap:{list:snapList,get:snapGet,create:snapCreate,remove:snapRemove},email:function(){var s=ses();return s&&s.email||''}}:null;
 /* clients (non-advisers) do not see the Users tab */
@@ -463,7 +463,7 @@ dialog.hf{width:min(620px,96vw)}
 .agebar input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--brand);border:4px solid #fff;box-shadow:0 0 0 1px var(--acb),0 4px 10px #0003;cursor:pointer}
 .agebar .ag-rng{margin-top:8px;display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--mu)}
 </style>
-<script>window.fdt=function(t){if(!t)return'—';var d=new Date(t);return isNaN(d)?'—':d.toLocaleString(LANG()==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'})};window.stampTxt=function(x){return'Added '+fdt(x.ca)+' · Last edited '+fdt(x.ma)};</script>
+<script>window.fdt=function(t){if(!t)return'—';var d=new Date(t);return isNaN(d)?'—':d.toLocaleString(LANG()==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'})};window.fdd=function(t){if(!t)return'';var d=new Date(t);return isNaN(d)?'':d.toLocaleDateString(LANG()==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric'})};window.ymdLoc=function(t){var d=new Date(t);if(isNaN(d))return'';var p=function(n){return String(n).padStart(2,'0')};return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())};window.stampTxt=function(x){return(x.ca?'Added '+fdt(x.ca):'Entry date not set')+(x.ma?' · Last edited '+fdt(x.ma):'')};</script>
 <style>.tsx{font-size:12px;margin-top:3px;line-height:1.35}</style>
 <style>.ht td:not(:first-child){white-space:nowrap}.ht td:nth-child(3) .mu{white-space:normal}.ht tr.t td{font-variant-numeric:tabular-nums}</style>
 <style>/* theme everywhere */body *,body *::before,body *::after{font-family:inherit}svg text{font-family:var(--ff)}::selection{background:color-mix(in srgb,var(--ac) 28%,transparent)}input,select,textarea,progress{accent-color:var(--ac)}a{color:var(--ac)}:focus-visible{outline-color:var(--ac)}</style>
@@ -2114,7 +2114,7 @@ function stepRet(d){const a0=S.members[0].age,mx=a0+calc(S).rows.length-1;S.ret=
 /* ===== Holdings: Export CSV (all holdings, exact columns, final Total row) ===== */
 const HCSV_COLS=['Holding Name','Category','Current Value','Yearly Addition','Monthly Addition','Addition Period','Expected Return (%)','Value at Retirement'];
 function holdCSV(){const D=calc(S),rh=D.rows[D.hi],q=v=>{v=String(v==null?'':v);return /[",\r\n]/.test(v)||/^\s|\s$/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
-const L=S.assets.map((x,i)=>({x,i,fv:rh.v[i],cur:D.rows[0].v[i]})),val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
+const L=S.assets.map((x,i)=>({x,i,fv:rh.v[i],cur:D.rows[0].v[i]})),val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='ca'?(o.x.ca||''):UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
 L.sort((a,b)=>(val(a)>val(b)?1:val(a)<val(b)?-1:0)*UI.d);
 const R=n=>Math.round(+n||0),rows=L.map(o=>{const x=o.x,per=x.type?'Auto (no additions)':[ayT(x,' '),matT(x,'')].filter(Boolean).join('; ');
 return{name:x.name,cat:x.cat+(x.type?' (auto)':''),cur:R(o.cur),yr:x.type?0:R(x.add),mo:x.type?0:R(x.madd),per,ret:+(x.ret*100).toFixed(2),fv:R(o.fv)}});
@@ -2232,11 +2232,11 @@ if(x.add>0&&!(x.madd>0)){let c=0,la=0,fa=0;for(let a=2;a<=Math.min(61,x.yrs);a++
 const y=effYrs(x);if(y<2)return'None';const m=(S.start+y-1)*12+3-st;if(m<1)return'None';const yy=Math.floor(m/12),mm=m%12;return(yy?yy+(yy>1?' yrs':' yr'):'')+(yy&&mm?' ':'')+(mm?mm+' mo':'')+s+(fr?MSN[e.mo-1]+' '+e.y+' \u2013 Mar '+(S.start+y-1):'till 1 Apr '+(S.start+y-1))};
 function holdRows(){const D=calc(S),rh=D.rows[D.hi],q=UI.q.toLowerCase();
 let L=S.assets.map((x,i)=>({x,i,fv:rh.v[i],cur:D.rows[0].v[i]})).filter(o=>o.x.name.toLowerCase().includes(q));
-const val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
+const val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='ca'?(o.x.ca||''):UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
 L.sort((a,b)=>(val(a)>val(b)?1:val(a)<val(b)?-1:0)*UI.d);
 if(!L.length)return`<div class="em">${S.assets.length?'No holdings match your search or filter.':'No holdings yet. Click “Add holding” to begin.'}</div>`;
 const th=(k,t)=>`<th aria-sort="${UI.k===k?(UI.d>0?'ascending':'descending'):'none'}"><button data-k="${k}">${t}${UI.k===k?(UI.d>0?' ▲':' ▼'):''}</button></th>`,sh=o=>rh.tot?o.fv/rh.tot*100:0;
-const nm=o=>`<div class="nm"><div><b><a href="#" class="hyl" data-hy="${esc(String(o.x.id))}" role="button" aria-haspopup="dialog" title="View year-by-year report">${escn(o.x.name)}</a></b><div><span class="pill" style="--c:${CC[o.x.cat]}">${esc(o.x.cat)}${o.x.type?' · auto':''}</span>${(o.x.comments&&o.x.comments.length)?` <button type="button" class="ntb" data-e="${o.i}" data-nt="1" title="View notes" aria-label="View ${o.x.comments.length} notes for ${escn(o.x.name)}">📝 ${o.x.comments.length}</button>`:''}</div></div></div>`;
+const nm=o=>`<div class="nm"><div><b><a href="#" class="hyl" data-hy="${esc(String(o.x.id))}" role="button" aria-haspopup="dialog" title="View year-by-year report">${escn(o.x.name)}</a></b><div><span class="pill" style="--c:${CC[o.x.cat]}">${esc(o.x.cat)}${o.x.type?' · auto':''}</span>${(o.x.comments&&o.x.comments.length)?` <button type="button" class="ntb" data-e="${o.i}" data-nt="1" title="View notes" aria-label="View ${o.x.comments.length} notes for ${escn(o.x.name)}">📝 ${o.x.comments.length}</button>`:''}</div><div class="mu tsx" title="${esc(stampTxt(o.x))}">${o.x.ca?'Added '+esc(fdd(o.x.ca)):'Entry date not set'}</div></div></div>`;
 const bt=(o,ic)=>`<button class="tbs" data-e="${o.i}" aria-label="Edit ${escn(o.x.name)}" title="Edit">Edit</button> <button class="tbs d" data-x="${o.i}" aria-label="Delete ${escn(o.x.name)}" title="Delete">Delete</button>`;
 /* build 119: group holdings by category (header with count, current value, yearly addition and share; click a header to collapse) */
 if(UI.g===undefined){try{UI.g=localStorage.getItem('vr-grp')!=='0'}catch(e){UI.g=true}}UI.gc=UI.gc||{};
@@ -2254,7 +2254,7 @@ ${grp(L,o=>`<tr><td>${nm(o)}</td><td>${f(o.cur)}</td><td>${o.x.type?'—':f(o.x.
 function hold(){const n0=S.assets.length;UI.hc=null;if(!n0)return gpEmpty();
 const ic=(d)=>'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
 return`<div class="hp-head"><div class="hp-ttl"><h1>Portfolio Holdings</h1><p>${n0} active investment${n0===1?'':'s'} · Real-time valuation &amp; retirement forecasts</p></div><button type="button" class="p hp-add" id="add">${ic('<path d="M12 5v14M5 12h14"/>')}<span>Add holding</span></button></div>
-<div class="card hp-card"><div class="hp-tools"><label class="hp-search"><span class="sr-only">Search holdings</span>${ic('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<input id="q" type="search" placeholder="Search holdings…" aria-label="Search holdings" value="${esc(UI.q)}"></label><div class="hp-sort"><select id="sf" aria-label="Sort by">${[['name','Name'],['cat','Category'],['cur','Current value'],['add','Yearly addition'],['yrs','Addition years'],['ret','Return'],['fv','Value at retirement']].map(([k,t])=>`<option value="${k}" ${UI.k===k?'selected':''}>Sort: ${t}</option>`).join('')}</select><button type="button" id="sd" aria-label="Toggle sort direction" title="Toggle sort direction">${UI.d>0?'▲':'▼'}</button><button type="button" id="hg" class="hp-tgl" aria-pressed="${UI.g!==false}" aria-label="Group holdings by category" title="Group holdings by category">${ic('<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5"/>')}<span class="hp-sw" aria-hidden="true"></span></button></div><button type="button" id="mcat" class="hp-cat" title="Add or manage categories">${ic('<path d="M4 6h16M4 12h16M4 18h10"/>')}<span>Categories</span></button><button type="button" id="hcsvi" class="hp-cat hp-csv" title="Add or update holdings from a CSV file">${ic('<path d="M12 20V9M7 13l5-5 5 5M5 4h14"/>')}<span>Import CSV</span></button><button type="button" id="hcsv" class="hp-cat hp-csv" title="Download all holdings as a CSV file">${ic('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>')}<span>Export CSV</span></button></div><div id="hr">${holdRows()}</div></div>`}
+<div class="card hp-card"><div class="hp-tools"><label class="hp-search"><span class="sr-only">Search holdings</span>${ic('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<input id="q" type="search" placeholder="Search holdings…" aria-label="Search holdings" value="${esc(UI.q)}"></label><div class="hp-sort"><select id="sf" aria-label="Sort by">${[['name','Name'],['cat','Category'],['cur','Current value'],['add','Yearly addition'],['yrs','Addition years'],['ret','Return'],['fv','Value at retirement'],['ca','Entry date']].map(([k,t])=>`<option value="${k}" ${UI.k===k?'selected':''}>Sort: ${t}</option>`).join('')}</select><button type="button" id="sd" aria-label="Toggle sort direction" title="Toggle sort direction">${UI.d>0?'▲':'▼'}</button><button type="button" id="hg" class="hp-tgl" aria-pressed="${UI.g!==false}" aria-label="Group holdings by category" title="Group holdings by category">${ic('<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5"/>')}<span class="hp-sw" aria-hidden="true"></span></button></div><button type="button" id="mcat" class="hp-cat" title="Add or manage categories">${ic('<path d="M4 6h16M4 12h16M4 18h10"/>')}<span>Categories</span></button><button type="button" id="hcsvi" class="hp-cat hp-csv" title="Add or update holdings from a CSV file">${ic('<path d="M12 20V9M7 13l5-5 5 5M5 4h14"/>')}<span>Import CSV</span></button><button type="button" id="hcsv" class="hp-cat hp-csv" title="Download all holdings as a CSV file">${ic('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>')}<span>Export CSV</span></button></div><div id="hr">${holdRows()}</div></div>`}
 function hin(n){if(n==null)return'—';n=Math.round(n);if(n<1)return'0';const p=[],c=Math.floor(n/1e7),l=Math.floor(n%1e7/1e5),t=Math.floor(n%1e5/1e3),r=n%1e3;if(c)p.push(c+' करोड़');if(l)p.push(l+' लाख');if(t)p.push(t+' हजार');if(r)p.push(r);return p.join(' ')}
 const LK=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}),lk=n=>n==null?'—':LK.format(n/1e5);
 const sh=s=>s.replace('School · Class ','School ').replace('College · Yr ','College ').replace(' of ','/');
@@ -2272,6 +2272,7 @@ ${Ms.map((m,k)=>`<span>${escn(m.name)}</span><b>Age ${r.age[k]}${m.role==='Child
 ${A.map((x,i)=>`<span>${escn(x.name)}</span><b>${f(r.v[i])}</b>`).join('')}<span>Blended ROI</span><b>${rowRoiTxt(r)}</b><span>Yearly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</b><span>Monthly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</b><span>Amount deposited</span><b>${f(r.add)}</b><span>Yearly change</span><b>${r.a>1?f(r.chg):'—'}</b></div></details>`).join('')}</div>`}
 function rep(){const MV=UI.rv==='month',IV=UI.rv==='int',A=S.assets,yr=x=>x.yrs;
 if(UI.rv==='clients'&&window.gppClients)return gppClients();
+if(UI.rv==='ent'&&window.repEnt)return window.repEnt();
 if(!A.length)return gpEmpty();
 if(UI.rv==='sav'&&window.repSav)return window.repSav();
 const SEL=repSel(),so=IV?window.repISort():SEL.min?[['a','S.No'],['year',MV?'Month':'As on'],...SEL.idx.map(i=>['v'+i,A[i].name]),...(MV?[['tot','Month end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Interest earned']]:[['age','Age'],['tot','Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Yearly income'],['mi','Monthly income'],['chg','Yearly change']])]:[['a','S.No'],['year',MV?'Month':'As on'],['age','Age'],['tot',MV?'Month end balance':'Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int',MV?'Interest earned':'Yearly income'],...(MV?[]:[['mi','Monthly income']]),['chg',MV?'Monthly change':'Yearly change'],...A.map((x,i)=>['v'+i,x.name])];
@@ -2378,7 +2379,7 @@ const body=g?`<p class="mu">Value is calculated automatically. Only the expected
 const grow=`<section class="hs"><h3>Growth Assumptions</h3>${hf('fr','Expected Return (% p.a.)',+(x.ret*100).toFixed(3),'min=0 max=50 step=any')}${g?'':`<div class="hf1"><label for="fmat">Maturity Year (optional)</label><input id="fmat" type="number" inputmode="numeric" min="1990" max="2200" step="1" placeholder="e.g. ${S.start+6}" value="${esc(x.mat||'')}"><small class="hh" id="fmath"></small></div><div class="hf1"><label id="fcml">Interest Calculation</label><div class="cmp" role="radiogroup" aria-labelledby="fcml">${CMPS.map(c=>`<label class="cc"><input type="radio" name="fcm" value="${c[0]}" ${x.cmp===c[0]?'checked':''}><span><b>${c[1]}</b><small>${c[2]}</small></span></label>`).join('')}</div></div>`}</section>`;
 const wantN=!!window.__openNotes;window.__openNotes=false;
 const nts=`<section class="hs ntsec"><h3>Notes &amp; History <span id="ntn" class="ntn"></span></h3><p class="mu ntl0">Dated comments for this holding only. They are saved when you click Save Holding.</p><div id="ntx"><div class="ntf"><div class="hf1"><label for="ntt">Note</label><textarea id="ntt" rows="3" maxlength="500" placeholder="e.g. Raised the SIP after bonus, switched fund, interest rate revised…"></textarea><small class="hh" id="ntc">0 / 500</small></div><div class="ntr"><div class="hf1"><label for="ntd">Date</label><input id="ntd" type="date" value="${todayStr()}" min="1990-01-01" max="2200-12-31"></div><button type="button" class="p" id="nta">Add Comment</button></div><div class="er" id="nte" role="alert"></div></div><div class="ntl" id="ntl" role="list" aria-label="Comment history"></div></div></section>`;
-open(`<form id="fm" novalidate><h2>${i==null?'Add':'Edit'} Holding</h2><section class="hs"><h3>Holding Details</h3><div class="hg"><div class="hf1"><label for="fn">Name</label><input id="fn" type="text" value="${escn(x.name)}" maxlength=40 required></div><div class="hf1"><label for="fc">Category</label><select id="fc">${CATS.map(c=>catOpt(c,c===x.cat)).join('')}<option value="__new">＋ New category…</option></select></div></div></section>${body}${grow}${nts}<div id="hp" class="pvbox" aria-live="polite"></div><div id="fe" class="er" role="alert"></div><div class="tb"><button type="button" id="cn">Cancel</button><button class="p">Save Holding</button></div></form>`);
+open(`<form id="fm" novalidate><h2>${i==null?'Add':'Edit'} Holding</h2>${i==null?'':'<div class="tsx">'+esc(stampTxt(x))+'</div>'}<section class="hs"><h3>Holding Details</h3><div class="hg"><div class="hf1"><label for="fn">Name</label><input id="fn" type="text" value="${escn(x.name)}" maxlength=40 required></div><div class="hf1"><label for="fc">Category</label><select id="fc">${CATS.map(c=>catOpt(c,c===x.cat)).join('')}<option value="__new">＋ New category…</option></select></div><div class="hf1"><label for="fed">Entry date</label><input id="fed" type="date" value="${x.ca?ymdLoc(x.ca):(i==null?todayStr():'')}" min="1990-01-01" max="${todayStr()}"><small class="hh">When you added this holding. It does not change any calculation.</small></div></div></section>${body}${grow}${nts}<div id="hp" class="pvbox" aria-live="polite"></div><div id="fe" class="er" role="alert"></div><div class="tb"><button type="button" id="cn">Cancel</button><button class="p">Save Holding</button></div></form>`);
 dg.classList.add('hf');$('#cn').onclick=()=>dg.close();$('#fn').focus();
 /* Notes & History: kept as a draft until "Save Holding" */
 let cmts=cmClean(x.comments),edId=null,delId=null;const NT_MAX=500,NT_PER=100,NT_TOT=100000;
@@ -2468,7 +2469,7 @@ fm.onsubmit=e=>{e.preventDefault();
 if($('#ntt').value.trim()){$('#fe').textContent=tr('You have a note that has not been added. Click "Add Comment" to keep it, or clear the note box.',1);ntGo();$('#ntt').focus();return}
 if(edId){$('#fe').textContent=tr('Finish editing your note (Save or Cancel) before saving the holding.',1);ntGo();return}
 const o=vf();if(o.er.length){$('#fe').textContent=tr(o.er.join(' '),1);return}
-const n=mk(o),now=new Date().toISOString();n.ma=now;n.ca=i==null?now:(x.ca||'');if(i==null)S.assets.push(n);else S.assets[i]=n;save();dg.close();if(GP.includes(UI.tab))UI.tab='Holdings';render();window.scrollTo(0,0);toast(i==null?'Holding added':'Holding updated')}}
+const n=mk(o),now=new Date().toISOString();n.ma=now;n.ca=i==null?now:(x.ca||'');const ev=(($('#fed')||{}).value||'').trim();if(ev){if(!/^\d{4}-\d\d-\d\d$/.test(ev)||isNaN(new Date(ev))||ev>todayStr()||ev<'1990-01-01'){$('#fe').textContent=tr('Entry date must be a real date, not in the future.',1);return}if(!(x.ca&&ymdLoc(x.ca)===ev)&&!(i==null&&ev===todayStr())){const q=ev.split('-');n.ca=new Date(+q[0],+q[1]-1,+q[2],12,0,0).toISOString()}}if(i==null)S.assets.push(n);else S.assets[i]=n;save();dg.close();if(GP.includes(UI.tab))UI.tab='Holdings';render();window.scrollTo(0,0);toast(i==null?'Holding added':'Holding updated')}}
 function text(title,t,apply){open(`<h2>${title}</h2><textarea id="tx" rows="9" ${apply?'':'readonly'} aria-label="${title}">${esc(t)}</textarea><div id="fe" class="er" role="alert"></div><div class="tb">${apply?'<button class="p" id="ap">Apply</button>':'<button class="p" id="cp">Copy</button>'}<button id="cn">Close</button></div>`);
 $('#cn').onclick=()=>dg.close();const ta=$('#tx');ta.focus();if(!apply)ta.select();
 if(apply)$('#ap').onclick=()=>{try{apply(ta.value);dg.close()}catch(e){$('#fe').textContent=tr(e.message,1)}};
@@ -2739,7 +2740,7 @@ const add=A.reduce(function(q,x,i){const k=fi[i];if(!k||!k.act)return q;return q
 const dep=A.map(function(x,i){const k=fi[i];return!!(k&&k.act&&(k.ms[m-1]||(k.yp&&FYM(x.amon||4)===m-1)))});
 rows.push({a:(a-2)*12+m,year:c.year,mi:m-1,label:MN[cm]+' '+cy,age:c.age,st:c.st,v:v,dep:dep,ad:A.map(function(x,i){const k=fi[i];return!k||!k.act?0:(k.ms[m-1]?(x.madd||0):0)+((k.yp&&FYM(x.amon||4)===m-1)?x.add:0)}),pv:last.slice(),tot:tot,chg:tot==null?null:tot-pv,add:add});v.forEach(function(w,i){if(w!=null)last[i]=w})}}
 return{rows:rows,D:D}};
-window.rvTog=function(){return'<div class="seg" role="group" aria-label="Report type" style="margin-bottom:14px">'+[['clients','Clients'],['year','Yearly View'],['month','Monthly View'],['int','Interest & Income'],['sav','Yearly Savings']].map(function(k){return'<button type="button" data-rv="'+k[0]+'" aria-pressed="'+((UI.rv||'year')===k[0])+'">'+k[1]+'</button>'}).join('')+'</div>'};
+window.rvTog=function(){return'<div class="seg" role="group" aria-label="Report type" style="margin-bottom:14px">'+[['clients','Clients'],['year','Yearly View'],['month','Monthly View'],['int','Interest & Income'],['sav','Yearly Savings'],['ent','Entry Dates']].map(function(k){return'<button type="button" data-rv="'+k[0]+'" aria-pressed="'+((UI.rv||'year')===k[0])+'">'+k[1]+'</button>'}).join('')+'</div>'};
 window.repMRows=function(){const S0=repSel();if(S0.none)return window.repNone();if(S0.min){const m0=monthData(),ry0=m0.D.rows[m0.D.ri].year;return window.repMin(m0.rows,{label:'Month',noun:'months',lab:r=>r.label,hl:r=>r.year===ry0&&r.mi===11})}const md=monthData(),D=md.D,A=S.assets,Ms=S.members,kids=Ms.map(function(m,i){return m.role==='Child'?i:-1}).filter(function(i){return i>=0}),q=UI.rq.trim().toLowerCase(),ry=D.rows[D.ri].year,nf=A.length===1||(UI.rcl&&UI.rcl.length===1);
 const key=function(r,k){return k==='a'||k==='year'||k==='fy'||k[0]==='s'?r.a:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='int'?(r.chg==null?-1e18:r.chg-r.add):r.v[+k.slice(1)]};
 const L=md.rows.filter(function(r){return!q||[r.a,r.label,fyl(r.year),r.age.join(' '),r.st.join(' '),r.tot,f(r.tot),hin(r.tot),rowRoiTxt(r)].concat(r.v.map(f)).join(' ').toLowerCase().indexOf(q)>-1});
@@ -6930,7 +6931,7 @@ window.gppMBar=function(){return typeof S!=='undefined'&&ensure()?'<div class="f
 window.gppHoldingList=function(){/* read-only: every Goal Planner client with today's value of each holding (the same numbers as Current Corpus on the Goal Planner summary) */
   const P=ensure();if(!P)return[];window.gppSync();
   return Object.keys(P.profiles).map(function(id){const p=P.profiles[id];let items=[];
-    try{const d=JSON.parse(JSON.stringify(p.d)),D=calc(d);items=(d.assets||[]).map(function(x,i){return{id:String(x.id),name:String(x.name||'Holding'),cat:String(x.cat||''),val:Math.round(+D.rows[0].v[i]||0)}})}catch(e){items=[]}
+    try{const d=JSON.parse(JSON.stringify(p.d)),D=calc(d);items=(d.assets||[]).map(function(x,i){return{id:String(x.id),name:String(x.name||'Holding'),cat:String(x.cat||''),val:Math.round(+D.rows[0].v[i]||0),ca:String(x.ca||''),ma:String(x.ma||'')}})}catch(e){items=[]}
     return{id:id,name:p.name,active:id===P.active,items:items}})};
 
 function metrics(p){
@@ -8135,5 +8136,81 @@ html body #lg label.lgsv span{line-height:1.2}
 <script>/* initial letter shown in the round account badge on phones (the full email stays in the tooltip) */
 (function(){var w=document.getElementById('who');if(!w)return;function ini(){var t=(w.textContent||'').replace(/[^\p{L}\p{N}@._-]+/gu,' ').trim();w.dataset.ini=(t.charAt(0)||'?').toUpperCase();w.title=t?'Signed in as '+t:'Signed in'}ini();try{new MutationObserver(ini).observe(w,{childList:true,characterData:true,subtree:true})}catch(e){}})();
 (function(){var so=document.getElementById('so');if(so){so.title='Sign out';so.setAttribute('aria-label','Sign out')}})();
+</script>
+<style id="vr-ent-css">
+.ent-cards{display:none;flex-direction:column;gap:8px;margin-top:6px}
+html body .ent-t :is(th,td){text-align:left!important;position:static!important;left:auto!important;border-right:0!important;border-left:0!important;box-shadow:none!important;min-width:0!important}
+html body .ent-t :is(th,td).ent-n{text-align:right!important;white-space:nowrap}
+html body .ent-t th button{white-space:nowrap}
+html body .ent-t td{vertical-align:top}
+@media (max-width:720px){
+ html body .ent-t{display:none!important}
+ html body .ent-cards{display:flex}
+ html body .vr-entpg .mw{max-height:none;overflow:visible}
+}
+</style>
+<script id="vr-ent">
+/* Reports > Entry Dates: when each holding was added, for every Goal Planner client.
+   Read-only. It uses the plan data that is already saved to the database (field "ca" on each holding),
+   the same data the optional SQL view public.vr_holdings_added exposes. */
+(function(){
+var ST={c:'',r:'all',q:'',k:'ca',d:-1},CA=null,DAY=864e5;
+function ts(s){var t=s?new Date(s).getTime():NaN;return isNaN(t)?null:t}
+function fyStart(){var n=new Date(),y=n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;return new Date(y,3,1).getTime()}
+function load(){
+ var L=(window.gppHoldingList&&window.gppHoldingList())||[],all=[];
+ L.forEach(function(c){c.items.forEach(function(x){all.push({cid:c.id,client:c.name,active:c.active,name:x.name,cat:x.cat,val:x.val,ca:x.ca||'',ma:x.ma||'',t:ts(x.ca),tm:ts(x.ma)})})});
+ return{L:L,all:all}
+}
+function pick(){
+ var d=CA||(CA=load()),now=Date.now(),
+ base=d.all.filter(function(o){return!ST.c||o.cid===ST.c}),
+ inR=function(o){var r=ST.r;if(r==='all')return true;if(r==='unset')return o.t==null;if(o.t==null)return false;if(r==='30')return now-o.t<=30*DAY;if(r==='90')return now-o.t<=90*DAY;if(r==='fy')return o.t>=fyStart();return true},
+ q=(ST.q||'').trim().toLowerCase(),
+ L=base.filter(inR).filter(function(o){return!q||[o.client,o.name,o.cat,o.t==null?'not set':fdd(o.ca),f(o.val)].join(' ').toLowerCase().indexOf(q)>-1}),
+ key=function(o){return ST.k==='ca'?o.t:ST.k==='ma'?o.tm:ST.k==='val'?o.val:String(o[ST.k]||'').toLowerCase()};
+ L.sort(function(x,y){var a=key(x),b=key(y);if(a==null&&b==null)return x.name<y.name?-1:1;if(a==null)return 1;if(b==null)return -1;return(a>b?1:a<b?-1:0)*ST.d});
+ return{d:d,base:base,L:L,now:now}
+}
+var dt=function(o){return o.t==null?'<span class="mu">Not set</span>':esc(fdd(o.ca))};
+function bodyHTML(p){
+ var L=p.L,base=p.base,n=base.length,dated=base.filter(function(o){return o.t!=null}).length,
+ last30=base.filter(function(o){return o.t!=null&&p.now-o.t<=30*DAY}).length,
+ sum=L.reduce(function(q,o){return q+o.val},0),
+ tiles='<div class="rsum" aria-label="Entry date summary"><div><span class="mu">Holdings'+(ST.c?' (this client)':' (all clients)')+'</span><b>'+n+'</b></div><div><span class="mu">With an entry date</span><b>'+dated+'</b></div><div><span class="mu">Entry date not set</span><b>'+(n-dated)+'</b></div><div><span class="mu">Added in the last 30 days</span><b>'+last30+'</b></div><div><span class="mu">Value of holdings shown</span><b>'+f(sum)+'</b></div></div>';
+ if(!L.length)return tiles+'<div class="em">No holdings match your filters.</div>';
+ var th=function(k,t,r){return'<th'+(r?' class="ent-n"':'')+' aria-sort="'+(ST.k===k?(ST.d>0?'ascending':'descending'):'none')+'"><button type="button" data-ek="'+k+'">'+t+(ST.k===k?(ST.d>0?' ▲':' ▼'):'')+'</button></th>'},
+ head='<tr>'+th('ca','Entry date')+th('client','Client')+th('name','Holding')+th('cat','Category')+th('val','Current value',1)+th('ma','Last edited',1)+'</tr>',
+ rows=L.map(function(o){return'<tr><td>'+dt(o)+'</td><td>'+esc(o.client)+'</td><td>'+esc(o.name)+'</td><td>'+esc(o.cat)+'</td><td class="ent-n">'+f(o.val)+'</td><td class="ent-n">'+(o.tm==null?'—':esc(fdd(o.ma)))+'</td></tr>'}).join('')+'<tr class="vr-tot"><td></td><td></td><td><b>Total shown ('+L.length+')</b></td><td></td><td class="ent-n"><b>'+f(sum)+'</b></td><td></td></tr>',
+ cards='<div class="ent-cards">'+L.map(function(o){return'<details class="vr-scd"><summary><b>'+esc(o.name)+'</b><span>'+esc(o.client)+' · '+(o.t==null?'Entry date not set':'Added '+esc(fdd(o.ca)))+'</span><em>'+f(o.val)+'</em></summary><dl><dt>Entry date</dt><dd>'+dt(o)+'</dd><dt>Client</dt><dd>'+esc(o.client)+'</dd><dt>Category</dt><dd>'+esc(o.cat)+'</dd><dt>Last edited</dt><dd>'+(o.tm==null?'—':esc(fdd(o.ma)))+'</dd></dl></details>'}).join('')+'</div>';
+ return tiles+'<div class="mw"><table class="rt ent-t" aria-label="Holdings by entry date">'+head+rows+'</table>'+cards+'</div>'
+}
+window.repEnt=function(){
+ CA=load();var p=pick(),d=p.d,
+ head='<div class="rph"><div><h1>Holdings by Entry Date</h1><div class="rpf">When each holding was added, across all your clients. Holdings added before dates were tracked show “Not set”: open the holding and choose its Entry date.</div></div><div class="rpr">'+rvTog()+'</div></div>';
+ if(!d.all.length)return head+'<div class="card"><div class="em">No holdings yet. Add a holding and its entry date will appear here.</div></div>';
+ var so=[['ca','Entry date'],['client','Client'],['name','Holding'],['cat','Category'],['val','Current value'],['ma','Last edited']],
+ rg=[['all','Added: any time'],['30','Added: last 30 days'],['90','Added: last 90 days'],['fy','Added: this financial year'],['unset','Entry date not set']];
+ return head+'<div class="card vr-entpg"><div class="rph2"><h2>Entry dates</h2><button id="entcsv" type="button">Copy as CSV</button></div>'+
+  '<div class="tb"><select id="entc" aria-label="Client"><option value="">All clients</option>'+d.L.map(function(c){return'<option value="'+esc(c.id)+'"'+(ST.c===c.id?' selected':'')+'>'+esc(c.name)+(c.active?' (current)':'')+'</option>'}).join('')+'</select>'+
+  '<select id="entr" aria-label="Added in">'+rg.map(function(r){return'<option value="'+r[0]+'"'+(ST.r===r[0]?' selected':'')+'>'+r[1]+'</option>'}).join('')+'</select></div>'+
+  '<div class="tb"><input id="entq" type="search" placeholder="Search holding, client, category…" aria-label="Search holdings" value="'+esc(ST.q)+'"><select id="ents" aria-label="Sort by">'+so.map(function(r){return'<option value="'+r[0]+'"'+(ST.k===r[0]?' selected':'')+'>Sort: '+r[1]+'</option>'}).join('')+'</select><button id="entd" type="button" aria-label="Toggle sort direction">'+(ST.d>0?'▲':'▼')+'</button></div>'+
+  '<div id="ent-body">'+bodyHTML(p)+'</div><div class="mu" style="margin-top:8px">Entry date = the date you added the holding (set it in Add/Edit holding → Entry date) · “Not set” = added before dates were tracked · click a heading to sort · the same data is in the optional database view <code>vr_holdings_added</code></div></div>'
+};
+document.addEventListener('change',function(e){var t=e.target;if(!t||!t.id)return;
+ if(t.id==='entc'){ST.c=t.value;render()}
+ else if(t.id==='entr'){ST.r=t.value;render()}
+ else if(t.id==='ents'){ST.k=t.value;ST.d=(t.value==='ca'||t.value==='val'||t.value==='ma')?-1:1;render()}});
+document.addEventListener('input',function(e){var t=e.target;if(t&&t.id==='entq'){ST.q=t.value;var b=document.getElementById('ent-body');if(b)b.innerHTML=bodyHTML(pick())}});
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-ek],#entd,#entcsv');if(!t)return;
+ if(t.id==='entd'){ST.d=-ST.d;render();return}
+ if(t.dataset&&t.dataset.ek){var k=t.dataset.ek;if(ST.k===k)ST.d=-ST.d;else{ST.k=k;ST.d=(k==='ca'||k==='val'||k==='ma')?-1:1}render();return}
+ if(t.id==='entcsv'){var p=pick(),q=function(v){v=String(v==null?'':v);return/[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v},
+  lines=[['Entry date','Client','Holding','Category','Current value','Last edited'].map(q).join(',')].concat(p.L.map(function(o){return[o.t==null?'':ymdLoc(o.ca),o.client,o.name,o.cat,Math.round(o.val),o.tm==null?'':ymdLoc(o.ma)].map(q).join(',')})),
+  txt=lines.join('\r\n'),done=function(){var s=t.textContent;t.textContent='Copied';setTimeout(function(){t.textContent=s},1500)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,function(){fb()});else fb();
+  function fb(){var a=document.createElement('textarea');a.value=txt;a.style.cssText='position:fixed;opacity:0';document.body.appendChild(a);a.select();try{document.execCommand('copy');done()}catch(x){}a.remove()}}});
+window.repEntData=function(){return pick()};
+})();
 </script>
 </body></html>
