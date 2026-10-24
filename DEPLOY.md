@@ -84,8 +84,30 @@ Setup: run the latest `supabase/schema.sql` in the Supabase SQL Editor (safe to 
 
 Notes: a snapshot is a copy of the holdings only, not of family members, goals or other settings. Snapshots are saved when you press the button (nothing is saved automatically). The list shows the latest 200 matches.
 
+## 3e. Policy Payouts (v2.6.0)
+**Holdings, Policy Payouts** lets each login (adviser or client) record insurance policies that pay money back, for example
+Tata AIG paying ₹94,000 a year for 10 years and then a lump sum. Click **Add policy**, enter the payout amount, frequency
+(monthly, quarterly, half-yearly, yearly), first payout date, duration in years and an optional maturity lump sum. The schedule is
+generated automatically (**Schedule** shows every date, financial year and Paid / Upcoming). Edit and Delete are on each row (Delete can be undone).
+
+How it counts:
+- Payouts are **income, not investment value**. They never enter a holding, the corpus, interest or any balance, so nothing is counted twice.
+- They show as **Policy payouts** (and **Total income** = interest + payouts) in Yearly View, Monthly View and Interest & Income, including the CSV copy.
+- The Summary shows them next to **Income at Retirement** (the payouts of the first financial year after retirement).
+- The **Retirement Planner** treats them as fixed-rupee income by calendar year (not inflated, like the policy itself). Untick
+  "Include these payouts as income in the Retirement Planner" under the list to leave them out. The planner starts next calendar year, so payouts still to come this year are not included.
+- The maturity lump sum is paid one period after the last regular payout (start date + duration). A payout dated before the plan's start year is history and is ignored.
+- Every client plan keeps its own policies (up to 30 per plan). Policies are saved, backed up (Export backup) and synced with the plan.
+
+**Database:** no change is needed. Policies are stored inside the plan document that is already saved in `app_docs` (jsonb), so the existing
+Row Level Security (a login only reads and writes its own rows) already protects them. Re-running `supabase/schema.sql` is safe and only adds a note.
+Plans saved by an older version simply have no policies and open normally.
+
+**Tests:** `node tests/policy.test.js` (no install needed) checks the schedule maths, financial-year placement, no double counting,
+retirement income, input cleaning and limits.
+
 ## Version
-The version (v2.1.2) shows next to the Vriddhi name at the top left and under the sign-in box. After you deploy, if you still see an older number or none, the browser is showing a cached copy: hard-refresh (Ctrl+Shift+R) or confirm Netlify finished the new deploy.
+The version (v2.6.0) shows next to the Vriddhi name at the top left and under the sign-in box. After you deploy, if you still see an older number or none, the browser is showing a cached copy: hard-refresh (Ctrl+Shift+R) or confirm Netlify finished the new deploy.
 
 ## 4. Check it works (do all of these before real client data)
 - Open the site, sign in with your adviser email and password.

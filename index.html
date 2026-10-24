@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <script>try{document.documentElement.setAttribute("data-skin",localStorage.getItem("vr-skin")||"enterprise")}catch(e){document.documentElement.setAttribute("data-skin","enterprise")}</script>
-<script>try{if(sessionStorage.getItem('fs-auth')!=='1')document.documentElement.classList.add('lk')}catch(e){document.documentElement.classList.add('lk')}</script>
+<script>/* Remember me: a ticked sign-in keeps its session in localStorage; a new tab or a restarted browser picks it up here, before the lock screen decides */
+try{if(sessionStorage.getItem('fs-auth')!=='1'&&localStorage.getItem('vr-rm')==='1'){var rmS=localStorage.getItem('vr-sb-remember'),rmO=rmS&&JSON.parse(rmS);if(rmO&&rmO.rt&&rmO.uid){sessionStorage.setItem('vr-sb',rmS);sessionStorage.setItem('fs-auth','1')}}}catch(e){}
+try{if(sessionStorage.getItem('fs-auth')!=='1')document.documentElement.classList.add('lk')}catch(e){document.documentElement.classList.add('lk')}</script>
 <script src="config.js"></script>
 <script id="vr-prod">
 /* Production build: real sign-in and cloud storage with Supabase (https://supabase.com).
@@ -12,8 +14,8 @@ window.VR_PROD=true;
 var C=window.VR_CFG||{},URL0=String(C.supabaseUrl||'').replace(/\/+$/,''),KEY=String(C.anonKey||''),SK='vr-sb';
 var cfgOk=/^https:\/\/[^\s\/]+$/i.test(URL0)&&KEY.length>20&&!/YOUR-PROJECT/i.test(URL0)||/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(URL0)&&KEY.length>5;
 function ses(){try{return JSON.parse(sessionStorage.getItem(SK))}catch(e){return null}}
-function put(o){try{sessionStorage.setItem(SK,JSON.stringify(o))}catch(e){}}
-function wipeAuth(){try{sessionStorage.removeItem('fs-auth');sessionStorage.removeItem('fs-user');sessionStorage.removeItem(SK)}catch(e){}}
+function put(o){try{sessionStorage.setItem(SK,JSON.stringify(o));if(localStorage.getItem('vr-rm')==='1')localStorage.setItem('vr-sb-remember',JSON.stringify(o))}catch(e){}}
+function wipeAuth(){try{sessionStorage.removeItem('fs-auth');sessionStorage.removeItem('fs-user');sessionStorage.removeItem(SK);localStorage.removeItem('vr-rm');localStorage.removeItem('vr-sb-remember')}catch(e){}}
 function forceLock(){wipeAuth();location.reload()}
 /* the local copy of plans belongs to ONE login: a different login on this browser never sees it, and it is never uploaded under another login */
 function wipeLocal(){try{Object.keys(localStorage).filter(function(k){return /^(fwt|fs-users)/.test(k)}).forEach(function(k){localStorage.removeItem(k)})}catch(e){}}
@@ -22,8 +24,10 @@ try{var s0=ses();if(cfgOk&&s0&&s0.uid&&localStorage.getItem('vr-owner')!==s0.uid
 try{if(sessionStorage.getItem('fs-auth')==='1'&&!(ses()&&ses().rt)){wipeAuth();document.documentElement.classList.add('lk')}}catch(e){}
 function fromTok(j){return{at:j.access_token,rt:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,uid:j.user&&j.user.id,email:j.user&&j.user.email}}
 var refreshing=null;
-async function token(){var s=ses();if(!s)throw{code:'unauthenticated'};if(s.exp-60000>Date.now())return s;
- if(!refreshing)refreshing=(async function(){try{var r=await fetch(URL0+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:s.rt})});var j=await r.json();if(!r.ok||!j.access_token)throw{code:'unauthenticated'};var n=fromTok(j);if(!n.uid)n.uid=s.uid;if(!n.email)n.email=s.email;put(n);return n}catch(e){forceLock();throw{code:'unauthenticated'}}finally{refreshing=null}})();
+/* Remember me with several tabs: Supabase refresh tokens work once, so a tab must adopt a newer token saved by another tab instead of refreshing with its own stale copy */
+function fresher(s){try{if(localStorage.getItem('vr-rm')!=='1')return null;var r=JSON.parse(localStorage.getItem('vr-sb-remember'));return r&&r.rt&&s&&r.uid===s.uid&&r.rt!==s.rt&&r.exp>s.exp?r:null}catch(e){return null}}
+async function token(){var s=ses();if(!s)throw{code:'unauthenticated'};var fr=fresher(s);if(fr){put(fr);s=fr}if(s.exp-60000>Date.now())return s;
+ if(!refreshing)refreshing=(async function(){try{var r=await fetch(URL0+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:s.rt})});var j=await r.json();if(!r.ok||!j.access_token)throw{code:'unauthenticated'};var n=fromTok(j);if(!n.uid)n.uid=s.uid;if(!n.email)n.email=s.email;put(n);return n}catch(e){var g=fresher(s);if(g){put(g);return g}forceLock();throw{code:'unauthenticated'}}finally{refreshing=null}})();
  return refreshing}
 async function rest(path,opt){opt=opt||{};var s=await token(),r=await fetch(URL0+'/rest/v1/'+path,{method:opt.method||'GET',headers:Object.assign({apikey:KEY,Authorization:'Bearer '+s.at,'Content-Type':'application/json'},opt.headers||{}),body:opt.body});
  if(!r.ok){var e=new Error('http '+r.status);e.code=(r.status===401||r.status===403)?'permission_denied':'unavailable';throw e}return r}
@@ -39,20 +43,7 @@ function doc(path){var enc=encodeURIComponent(path),seen=null;
 var dbApi={doc:doc},userApi={id:async function(){var s=ses();return s?s.uid:null}};
 window.claude={use:async function(n){return n==='db'?dbApi:n==='user'?userApi:null}};
 async function signIn(email,pw){var r=await fetch(URL0+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pw})}),j={};try{j=await r.json()}catch(e){}
- if(!r.ok||!j.access_token){var e=new Error('Sign in failed');e.status=r.status;throw e}
- /* two-step sign-in: a password-only session is never stored; the code step must finish first */
- var fl=j.user&&j.user.factors;if(!fl){try{var ur=await fetch(URL0+'/auth/v1/user',{headers:{apikey:KEY,Authorization:'Bearer '+j.access_token}});fl=(await ur.json()).factors}catch(x){}}
- var ids=(fl||[]).filter(function(f){return f.status==='verified'&&f.factor_type==='totp'}).map(function(f){return f.id});
- if(ids.length)return{mfa:true,at:j.access_token,ids:ids,uid:j.user&&j.user.id,email:j.user&&j.user.email||email};
- put(fromTok(j));return{mfa:false}}
-/* code step: any of the person's enrolled authenticators may answer */
-async function mfaStep(h,fid,code){var c=await fetch(URL0+'/auth/v1/factors/'+fid+'/challenge',{method:'POST',headers:h,body:'{}'}),cj={};try{cj=await c.json()}catch(x){}
- if(!c.ok||!cj.id){var e=new Error('Could not start verification');e.status=c.status;throw e}
- var v=await fetch(URL0+'/auth/v1/factors/'+fid+'/verify',{method:'POST',headers:h,body:JSON.stringify({challenge_id:cj.id,code:code})}),vj={};try{vj=await v.json()}catch(x){}
- if(!v.ok||!vj.access_token){var e2=new Error('Wrong code');e2.status=v.status||400;throw e2}return vj}
-async function verifyMfa(p,code){var h={apikey:KEY,Authorization:'Bearer '+p.at,'Content-Type':'application/json'},last=null;
- for(var i=0;i<p.ids.length;i++){try{var vj=await mfaStep(h,p.ids[i],code),n=fromTok(vj);if(!n.uid)n.uid=p.uid;if(!n.email)n.email=p.email;put(n);return}catch(e){last=e}}
- throw last||new Error('Wrong code')}
+ if(!r.ok||!j.access_token){var e=new Error('Sign in failed');e.status=r.status;throw e}put(fromTok(j))}
 async function signOut(){var s=ses();
  try{if(s)await fetch(URL0+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+s.at}})}catch(e){}
  /* clear the local copy of client data only when everything has reached the database */
@@ -70,28 +61,29 @@ async function changePassword(cur,nw){var s=await token();
  var u=await fetch(URL0+'/auth/v1/user',{method:'PUT',headers:{apikey:KEY,Authorization:'Bearer '+s.at,'Content-Type':'application/json'},body:JSON.stringify({password:nw})}),k={};try{k=await u.json()}catch(x){}
  if(!u.ok){var c=k&&(k.error_code||k.code),m=c==='same_password'?'New password must be different from the current one.':c==='weak_password'?'That password is too easy to guess. Use a longer, less common one.':(u.status===401||u.status===403)?'For safety, sign out, sign in again, then retry.':'Could not change the password. Check your connection and try again.';var e=new Error(m);e.status=u.status;e.code=c;throw e}
  try{await fetch(URL0+'/auth/v1/logout?scope=others',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+s.at}})}catch(x){}}
-/* two-step sign-in: list, set up and remove the signed-in person's own authenticator apps */
-async function authCall(path,method,body){var s=await token(),r=await fetch(URL0+'/auth/v1/'+path,{method:method||'GET',headers:{apikey:KEY,Authorization:'Bearer '+s.at,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}),j={};try{j=await r.json()}catch(x){}
- if(!r.ok){var e=new Error(j&&(j.msg||j.message||j.error_description)||('Request failed ('+r.status+')'));e.status=r.status;e.code=j&&(j.error_code||j.code);throw e}return j}
-async function mfaList(){var u=await authCall('user');return(u.factors||[]).filter(function(f){return f.factor_type==='totp'}).map(function(f){return{id:f.id,name:f.friendly_name||'Authenticator',verified:f.status==='verified'}})}
-async function mfaEnroll(){var old=await mfaList();for(var i=0;i<old.length;i++){if(!old[i].verified){try{await authCall('factors/'+old[i].id,'DELETE')}catch(x){}}}
- var j=await authCall('factors','POST',{factor_type:'totp',friendly_name:'Authenticator '+Math.random().toString(36).slice(2,6),issuer:'Vriddhi'});
- var q=j.totp&&j.totp.qr_code||'';if(/^data:image\/svg\+xml/i.test(q)){var k=q.indexOf(',');var raw=q.slice(k+1);try{raw=decodeURIComponent(raw)}catch(x){}q='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(raw)}
- return{id:j.id,qr:q,secret:j.totp&&j.totp.secret||'',uri:j.totp&&j.totp.uri||''}}
-async function mfaConfirm(id,code){var s=await token(),h={apikey:KEY,Authorization:'Bearer '+s.at,'Content-Type':'application/json'};
- var vj=await mfaStep(h,id,code),n=fromTok(vj);if(!n.uid)n.uid=s.uid;if(!n.email)n.email=s.email;put(n);
- try{await fetch(URL0+'/auth/v1/logout?scope=others',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+n.at}})}catch(x){}}
-async function mfaRemove(id){try{await authCall('factors/'+id,'DELETE')}catch(e){if(e.status===401||e.status===403||/aal2/i.test(e.message||'')){e.message='For safety, sign out, sign in again with your code, then retry.'}throw e}}
-/* the version shown in the corner pill and on the sign-in screen: change it here only */
-window.VR_VERSION='2.1.0';
-window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,verifyMfa:verifyMfa,mfaList:mfaList,mfaEnroll:mfaEnroll,mfaConfirm:mfaConfirm,mfaRemove:mfaRemove,email:function(){var s=ses();return s&&s.email||''}}:null;
+/* holding snapshots: dated copies of the holdings kept in the database (table vr_holding_snapshots, own rows only) */
+var SNID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function snapList(f){f=f||{};var s=await token(),p='vr_holding_snapshots?user_id=eq.'+s.uid+'&select=id,label,note,plan,holdings_count,total_value,created_at&order=created_at.desc&limit=200';
+ if(f.from)p+='&created_at=gte.'+encodeURIComponent(f.from);
+ if(f.to)p+='&created_at=lte.'+encodeURIComponent(f.to);
+ var q=String(f.q||'').replace(/[,()*%"'\\]/g,'').trim();
+ if(q)p+='&or='+encodeURIComponent('(label.ilike.*'+q+'*,note.ilike.*'+q+'*,plan.ilike.*'+q+'*)');
+ var r=await rest(p);return r.json()}
+async function snapGet(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token(),r=await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid+'&select=id,label,plan,created_at,data&limit=1'),a=await r.json();if(!a[0])throw new Error('That snapshot no longer exists.');return a[0]}
+async function snapCreate(o){var s=await token(),r=await rest('vr_holding_snapshots?select=id,created_at',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:s.uid,label:String(o.label||'').slice(0,120),note:String(o.note||'').slice(0,500),plan:String(o.plan||'').slice(0,120),holdings_count:Math.max(0,Math.round(+o.count||0)),total_value:+o.total||0,data:o.data})}),a=await r.json();return a[0]}
+async function snapRemove(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token();await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid,{method:'DELETE',headers:{Prefer:'return=minimal'}})}
+/* the version shown in the header and on the sign-in screen: change it here only */
+window.VR_VERSION='2.6.0'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
+window.VR_BUILD_NO=112; window.VR_BUILD_DATE='2026-10-24'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
+document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg')){var host=f.querySelector('.lform')||f;host.insertAdjacentHTML('beforeend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')}});
+window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,snap:{list:snapList,get:snapGet,create:snapCreate,remove:snapRemove},email:function(){var s=ses();return s&&s.email||''}}:null;
 /* clients (non-advisers) do not see the Users tab */
 if(cfgOk&&ses()&&ses().rt){isAdviser().then(function(v){window.VR_ADV=v;if(v===false)document.documentElement.classList.add('vr-client')})}
 /* sign-in page wording */
 document.addEventListener('DOMContentLoaded',function(){var u=document.getElementById('lu'),l=u&&u.parentNode.querySelector('label');if(u){u.type='email';u.setAttribute('autocomplete','username');u.setAttribute('inputmode','email')}if(l)l.textContent='Email'});
 /* automatic sign-out when idle (default 30 minutes, set idleMinutes in config.js; 0 = off) */
 var idle=Number(C.idleMinutes===undefined?30:C.idleMinutes),it=null;
-function arm(){if(!idle||!ses())return;clearTimeout(it);it=setTimeout(function(){if(ses()&&window.VRSB)window.VRSB.signOut()},idle*60000)}
+function arm(){if(!idle||!ses()||localStorage.getItem('vr-rm')==='1')return;clearTimeout(it);it=setTimeout(function(){if(ses()&&window.VRSB)window.VRSB.signOut()},idle*60000)}
 ['pointerdown','keydown','scroll','touchstart'].forEach(function(ev){window.addEventListener(ev,arm,{passive:true,capture:true})});arm();
 })();
 </script>
@@ -471,7 +463,7 @@ dialog.hf{width:min(620px,96vw)}
 .agebar input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--brand);border:4px solid #fff;box-shadow:0 0 0 1px var(--acb),0 4px 10px #0003;cursor:pointer}
 .agebar .ag-rng{margin-top:8px;display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--mu)}
 </style>
-<script>window.fdt=function(t){if(!t)return'—';var d=new Date(t);return isNaN(d)?'—':d.toLocaleString(LANG()==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'})};window.stampTxt=function(x){return'Added '+fdt(x.ca)+' · Last edited '+fdt(x.ma)};</script>
+<script>window.fdt=function(t){if(!t)return'—';var d=new Date(t);return isNaN(d)?'—':d.toLocaleString(LANG()==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'})};window.fdd=function(t){if(!t)return'';var d=new Date(t);return isNaN(d)?'':d.toLocaleDateString(LANG()==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric'})};window.ymdLoc=function(t){var d=new Date(t);if(isNaN(d))return'';var p=function(n){return String(n).padStart(2,'0')};return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())};window.stampTxt=function(x){return(x.ca?'Added '+fdt(x.ca):'Entry date not set')+(x.ma?' · Last edited '+fdt(x.ma):'')};</script>
 <style>.tsx{font-size:12px;margin-top:3px;line-height:1.35}</style>
 <style>.ht td:not(:first-child){white-space:nowrap}.ht td:nth-child(3) .mu{white-space:normal}.ht tr.t td{font-variant-numeric:tabular-nums}</style>
 <style>/* theme everywhere */body *,body *::before,body *::after{font-family:inherit}svg text{font-family:var(--ff)}::selection{background:color-mix(in srgb,var(--ac) 28%,transparent)}input,select,textarea,progress{accent-color:var(--ac)}a{color:var(--ac)}:focus-visible{outline-color:var(--ac)}</style>
@@ -516,7 +508,6 @@ html body button:disabled{opacity:.5}
 html body .seg button[aria-pressed=true]{background:color-mix(in srgb,var(--rpc) 22%,var(--card));color:var(--rpt);box-shadow:inset 0 0 0 1px var(--rpc)}
 html body nav button[aria-current=page]{color:var(--rpt);border-color:var(--rpc)}
 </style>
-<style>#lg .lgv{margin:14px 0 0;text-align:center;font-size:12px;letter-spacing:.02em}</style>
 <style>/* Help: no banner, plain card like Users */html body .pb{display:none}</style>
 <style>/* Add/Edit Holding: visual polish only (no markup, logic or calculation changes) */
 @keyframes hfin{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
@@ -1160,11 +1151,11 @@ html body button#hg[aria-pressed="true"] .hp-sw::after{transform:translateX(16px
 @media (prefers-reduced-motion:reduce){html body .vw *{transition:none!important;animation:none!important}}
 </style>
 </head>
-<body><div id="lg" role="dialog" aria-modal="true" aria-labelledby="lgt"><form class="lc" id="lgf" autocomplete="on" novalidate><div class="lb"><div class="ll"><svg width="30" height="30" viewBox="3.5 2 27 27" fill="none" aria-hidden="true"><rect x="5.5" y="20" width="4.6" height="7" rx="2.3" style="fill:var(--on,#fff)" opacity=".55"/><rect x="13.7" y="15" width="4.6" height="12" rx="2.3" style="fill:var(--on,#fff)" opacity=".78"/><rect x="21.9" y="11" width="4.6" height="16" rx="2.3" style="fill:var(--on,#fff)" opacity="1"/><path d="M24.2 9.6C23.6 6 25.6 3.6 29 3.2c.4 3.5-1.5 6-4.8 6.4z" style="fill:var(--on,#fff)" opacity="1"/><path d="M24.2 9.6C24.4 7 22.7 5.1 20 4.6c-.3 2.8 1.4 4.8 4.2 5z" style="fill:var(--on,#fff)" opacity=".8"/></svg></div><div class="lw">Vriddhi</div></div><svg class="lgb" viewBox="0 0 320 96" role="img" aria-label="Asha beside growing savings bars under a rising sun"><rect width="320" height="96" rx="12" fill="#E1F5EE"/><circle cx="270" cy="30" r="22" fill="#F5B83D" opacity=".45"/><circle cx="270" cy="30" r="13" fill="#F5B83D" opacity=".8"/><path d="M0 80C60 66 120 70 190 78C240 84 285 74 320 70L320 84Q320 96 308 96L12 96Q0 96 0 84Z" fill="#5DCAA5" opacity=".5"/><rect x="130" y="64" width="22" height="26" rx="6" fill="#0F6E56" opacity=".5"/><rect x="160" y="52" width="22" height="38" rx="6" fill="#0F6E56" opacity=".7"/><rect x="190" y="38" width="22" height="52" rx="6" fill="#0F6E56" opacity=".88"/><rect x="220" y="22" width="22" height="68" rx="6" fill="#0F6E56"/><path d="M134 52Q190 30 232 12" fill="none" stroke="#5F5E5A" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 6"/><g transform="translate(58,56) scale(.95)"><rect x="-16" y="0" width="32" height="38" rx="10" fill="#1D9E75"/><circle cx="0" cy="-14" r="16" fill="#F2C9A0"/><path d="M-17 -14Q-17 -34 0 -34Q17 -34 17 -14Q10 -24 0 -24Q-10 -24 -17 -14Z" fill="#3B2A20"/><circle cx="-6" cy="-13" r="2" fill="#2C2C2A"/><circle cx="6" cy="-13" r="2" fill="#2C2C2A"/><path d="M-7 -7Q0 1 7 -7" stroke="#2C2C2A" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M14 8L34 -8" stroke="#F2C9A0" stroke-width="6" stroke-linecap="round" fill="none"/></g><circle cx="104" cy="30" r="11" fill="#F5B83D"/><circle cx="104" cy="30" r="7.5" fill="none" stroke="#fff" stroke-width="1.5" opacity=".7"/><text x="104" y="30.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="800" fill="#fff" font-family="Arial,sans-serif">&#8377;</text></svg><p class="lgt">Know if your money will last. Track your holdings, watch them grow and plan your retirement.</p><h1 id="lgt">Sign in</h1><div class="fl"><input id="lu" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder=" " required><label for="lu">Email</label></div><div class="fl pw"><input id="lp" name="password" type="password" autocomplete="current-password" placeholder=" " required><label for="lp">Password</label><button type="button" id="lt" aria-label="Show password">Show</button></div><div id="le" class="er" role="alert"></div><button class="p go" type="submit">Sign in</button><ul class="lgc"><li>📈 Forecast growth</li><li>🏖️ Retirement roadmap</li><li>🔒 Private</li></ul><p class="mu lgv" id="lgv" aria-label="Build version"></p></form></div>
-<header class="hd"><div class="hdi"><div class="brand"><div class="logo"><svg width="30" height="30" viewBox="3.5 2 27 27" fill="none" aria-hidden="true"><rect x="5.5" y="20" width="4.6" height="7" rx="2.3" style="fill:var(--on);opacity:.55"/><rect x="13.7" y="15" width="4.6" height="12" rx="2.3" style="fill:var(--on);opacity:.78"/><rect x="21.9" y="11" width="4.6" height="16" rx="2.3" style="fill:var(--on);opacity:1"/><path d="M24.2 9.6C23.6 6 25.6 3.6 29 3.2c.4 3.5-1.5 6-4.8 6.4z" style="fill:var(--on);opacity:1"/><path d="M24.2 9.6C24.4 7 22.7 5.1 20 4.6c-.3 2.8 1.4 4.8 4.2 5z" style="fill:var(--on);opacity:.8"/></svg></div><div><div class="wm">Vriddhi</div><div class="tg">Plan · Track · Retire</div></div></div><nav id="nav" aria-label="Sections"></nav><div id="fhp" class="fhp" hidden></div><div class="sync" title="Your data is stored in your firm's secure database"><span class="dot" id="sd"></span><span id="sy" role="status">Local only</span></div><span id="who" class="who" title="Signed in as" hidden></span><button type="button" id="vr-cp" title="Password and two-step sign-in">Account</button><button type="button" id="so" title="Sign out">Sign out</button></div></header>
+<body><div id="lg" role="dialog" aria-modal="true" aria-labelledby="lgt"><form class="lc" id="lgf" autocomplete="on" novalidate><div class="lb"><div class="ll"><svg width="30" height="30" viewBox="3.5 2 27 27" fill="none" aria-hidden="true"><rect x="5.5" y="20" width="4.6" height="7" rx="2.3" style="fill:var(--on,#fff)" opacity=".55"/><rect x="13.7" y="15" width="4.6" height="12" rx="2.3" style="fill:var(--on,#fff)" opacity=".78"/><rect x="21.9" y="11" width="4.6" height="16" rx="2.3" style="fill:var(--on,#fff)" opacity="1"/><path d="M24.2 9.6C23.6 6 25.6 3.6 29 3.2c.4 3.5-1.5 6-4.8 6.4z" style="fill:var(--on,#fff)" opacity="1"/><path d="M24.2 9.6C24.4 7 22.7 5.1 20 4.6c-.3 2.8 1.4 4.8 4.2 5z" style="fill:var(--on,#fff)" opacity=".8"/></svg></div><div class="lw">Vriddhi</div></div><svg class="lgb" viewBox="0 0 320 96" role="img" aria-label="Asha beside growing savings bars under a rising sun"><rect width="320" height="96" rx="12" fill="#E1F5EE"/><circle cx="270" cy="30" r="22" fill="#F5B83D" opacity=".45"/><circle cx="270" cy="30" r="13" fill="#F5B83D" opacity=".8"/><path d="M0 80C60 66 120 70 190 78C240 84 285 74 320 70L320 84Q320 96 308 96L12 96Q0 96 0 84Z" fill="#5DCAA5" opacity=".5"/><rect x="130" y="64" width="22" height="26" rx="6" fill="#0F6E56" opacity=".5"/><rect x="160" y="52" width="22" height="38" rx="6" fill="#0F6E56" opacity=".7"/><rect x="190" y="38" width="22" height="52" rx="6" fill="#0F6E56" opacity=".88"/><rect x="220" y="22" width="22" height="68" rx="6" fill="#0F6E56"/><path d="M134 52Q190 30 232 12" fill="none" stroke="#5F5E5A" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 6"/><g transform="translate(58,56) scale(.95)"><rect x="-16" y="0" width="32" height="38" rx="10" fill="#1D9E75"/><circle cx="0" cy="-14" r="16" fill="#F2C9A0"/><path d="M-17 -14Q-17 -34 0 -34Q17 -34 17 -14Q10 -24 0 -24Q-10 -24 -17 -14Z" fill="#3B2A20"/><circle cx="-6" cy="-13" r="2" fill="#2C2C2A"/><circle cx="6" cy="-13" r="2" fill="#2C2C2A"/><path d="M-7 -7Q0 1 7 -7" stroke="#2C2C2A" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M14 8L34 -8" stroke="#F2C9A0" stroke-width="6" stroke-linecap="round" fill="none"/></g><circle cx="104" cy="30" r="11" fill="#F5B83D"/><circle cx="104" cy="30" r="7.5" fill="none" stroke="#fff" stroke-width="1.5" opacity=".7"/><text x="104" y="30.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="800" fill="#fff" font-family="Arial,sans-serif">&#8377;</text></svg><p class="lgt">Know if your money will last. Track your holdings, watch them grow and plan your retirement.</p><h1 id="lgt">Sign in</h1><div class="fl"><input id="lu" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder=" " required><label for="lu">Email</label></div><div class="fl pw"><input id="lp" name="password" type="password" autocomplete="current-password" placeholder=" " required><label for="lp">Password</label><button type="button" id="lt" aria-label="Show password">Show</button></div><label class="lgsv" title="Stay signed in on this device. Use only on your own device."><input type="checkbox" id="lsv"> <span>Remember me</span></label><div id="le" class="er" role="alert"></div><button class="p go" type="submit">Sign in</button><ul class="lgc"><li>📈 Forecast growth</li><li>🏖️ Retirement roadmap</li><li>🔒 Private</li></ul></form></div>
+<header class="hd"><div class="hdi"><div class="brand"><div class="logo"><svg width="30" height="30" viewBox="3.5 2 27 27" fill="none" aria-hidden="true"><rect x="5.5" y="20" width="4.6" height="7" rx="2.3" style="fill:var(--on);opacity:.55"/><rect x="13.7" y="15" width="4.6" height="12" rx="2.3" style="fill:var(--on);opacity:.78"/><rect x="21.9" y="11" width="4.6" height="16" rx="2.3" style="fill:var(--on);opacity:1"/><path d="M24.2 9.6C23.6 6 25.6 3.6 29 3.2c.4 3.5-1.5 6-4.8 6.4z" style="fill:var(--on);opacity:1"/><path d="M24.2 9.6C24.4 7 22.7 5.1 20 4.6c-.3 2.8 1.4 4.8 4.2 5z" style="fill:var(--on);opacity:.8"/></svg></div><div><div class="wm">Vriddhi</div><div class="tg">Plan · Track · Retire</div></div></div><nav id="nav" aria-label="Sections"></nav><div id="fhp" class="fhp" hidden></div><span id="who" class="who" title="Signed in as" hidden></span><button type="button" id="vr-cp" title="Change password">Password</button><button type="button" id="so" title="Sign out">Sign out</button></div></header>
 <div class="w">
 <main id="m"><div class="sk"></div><div class="sk"></div></main><footer class="ft">Vriddhi · Private to your firm's secure account · Amounts in ₹ · Forecasts are estimates, not financial advice</footer></div>
-<dialog id="dg"></dialog><div id="toast" role="status" aria-live="polite"></div><div id="bv" aria-label="Build version" title="Vriddhi build version"></div>
+<dialog id="dg"></dialog><div id="toast" role="status" aria-live="polite"></div>
 <style>
 .ua{display:inline-block}.ua::first-letter{text-decoration:underline}
 html[lang=hi] body,html[lang=hi] button,html[lang=hi] input,html[lang=hi] select,html[lang=hi] textarea{font-family:var(--ff),'Noto Sans Devanagari',sans-serif}</style>
@@ -1955,7 +1946,7 @@ if(hm){const e=(s.start+y-1)*12+2,c=mIx(x.mto);x.mto=mstr(c!=null?Math.min(c,e):
 if(hy){const e0=entry(x,s),am=x.amon||4,a1=e0.a0+(FYM(am)>=FYM(e0.mo)?0:1);let la=y;if(x.ycnt>0)la=Math.min(a1+x.ycnt-1,y);const fy=s.start+la-2;x.yto=mstr((am>=4?fy:fy+1)*12+am-1)}
 x.ycnt=0;x.yauto=false;x.yrs=yrsOf(x,s)})}
 const DEF0=()=>({v:2,cats:[],lang:'en',theme:'light',palette:'yellow',members:[MB(1,'Self','Self',48),MB(2,'Child 1','Child',17,12),MB(3,'Child 2','Child',14,9)],ret:57,hor:6,retP:57,goal:50000000,link:false,start:2026,end:2049,
-grat:{basic:198000,svc:14,rem:1,cap:2000000},
+grat:{basic:198000,svc:14,rem:1,cap:2000000},policies:[],
 assets:[A(1,'Mutual Fund','Equity',6213246,400000,.10,6),A(2,'PPF','Retirement',3730578,300000,.0825,6),A(3,'SUKANYA','Fixed income',2835184,150000,.082,6),A(4,'PF-Post','Retirement',3193213,150000,.071,6),A(5,'Bank','Cash',2724205,0,.045,6),A(6,'Gratuity','Retirement',0,0,.06,6,'gratuity'),A(7,'Stock','Equity',372383,20000,.04,6),A(8,'Metal ETF','Gold / Metal',2315641,0,.09,6),A(9,'NPS','Retirement',1793543,0,.09,6,undefined,15000,4,'2026-10-07',false,'2026-11','2027-01')]});
 const DEF=()=>{const s=DEF0();mig(s);return s};
 const gr=(s,a)=>{const y=s.grat.svc+a-1;return y<5?0:Math.min(s.grat.cap,s.grat.basic*15/26*y)};
@@ -1971,6 +1962,27 @@ const n=ms.filter(Boolean).length,w=ms.reduce((q,c,k)=>q+(c?12-k:0),0);
 return{e,first,act,ms,n,w,yp:(a>e.a0||FYM(x.amon||4)>=FYM(e.mo))&&(mIx(x.yfrom)==null||((x.amon||4)>=4?fyy:fyy+1)*12+(x.amon||4)-1>=mIx(x.yfrom))&&(mIx(x.yto)==null||((x.amon||4)>=4?fyy:fyy+1)*12+(x.amon||4)-1<=mIx(x.yto))&&(!mt||((x.amon||4)>=4?fyy:fyy+1)*12+(x.amon||4)-1<mt.ix),rem:12-FYM(x.amon||4),days:first?Math.min(365,Math.round((Date.UTC(e.fy+1,2,31)-Date.UTC(e.y,e.mo-1,e.d))/864e5)+1):365}}
 function mcm(o,x,q){const r=x.ret/12,mm=x.madd||0,ek=q.first?FYM(q.e.mo):-1,out=[];let b=o;const f0=q.first?Math.min(1,Math.max(0,q.days/365*12-(11-ek))):1;
 for(let k=0;k<12;k++){if(q.first&&k<ek){out.push(b);continue}b*=(q.first&&k===ek)?Math.pow(1+r,f0):1+r;if(q.ms[k])b+=mm;if(q.act&&q.yp&&FYM(x.amon||4)===k)b+=x.add;out.push(b)}return out}
+/* ---- Policy payouts (insurance money-back / survival benefits) ----
+   A policy pays `amt` every period (monthly / quarterly / half-yearly / yearly) from `start`, for `yrs` years, then an optional
+   maturity lump sum `lump` on start + yrs years. These are INCOME, not investment value: they never enter v[], tot or the
+   interest figures, so nothing is counted twice. They are shown beside interest in the reports and added to retirement income. */
+const PFREQ={monthly:12,quarterly:4,halfyearly:2,yearly:1},PSTEP={monthly:1,quarterly:3,halfyearly:6,yearly:12},PFN={monthly:'Monthly',quarterly:'Quarterly',halfyearly:'Half-yearly',yearly:'Yearly'},PMAX=30;
+function pDate(t){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(t||'');if(!m)return null;const y=+m[1],mo=+m[2],d=+m[3];if(y<1990||y>2200||mo<1||mo>12||d<1||d>31)return null;if(new Date(Date.UTC(y,mo-1,d)).getUTCMonth()!==mo-1)return null;return{y,mo,d}}
+function pAt(st,add){const ix=st.y*12+st.mo-1+add,y=Math.floor(ix/12),mo=ix%12,dim=new Date(Date.UTC(y,mo+1,0)).getUTCDate(),d=Math.min(st.d,dim);return{ix,y,mo:mo+1,d,date:y+'-'+String(mo+1).padStart(2,'0')+'-'+String(d).padStart(2,'0')}}
+function polSched(p){const out=[],st=p&&pDate(p.start);if(!st||!PFREQ[p.freq])return out;const yrs=Math.round(+p.yrs)||0,n=PFREQ[p.freq]*yrs,step=PSTEP[p.freq];
+if(p.amt>0)for(let k=0;k<n;k++){const t=pAt(st,k*step);out.push({n:k+1,ix:t.ix,date:t.date,amt:+p.amt,kind:'payout'})}
+if(p.lump>0&&yrs>0){const t=pAt(st,yrs*12);out.push({n:n+1,ix:t.ix,date:t.date,amt:+p.lump,kind:'lump'})}
+return out}
+/* month index (year*12+month0) -> plan row: row a covers the financial year starting April (s.start+a-2); row 1 is "today" and carries none */
+const polRow=(ix,s)=>Math.floor((ix-3)/12)-s.start+2;
+function polApply(s,rows){const P=s.policies||[];rows.forEach(r=>{r.pay=0;r.payR=0;r.payL=0});P.forEach(p=>polSched(p).forEach(e=>{const a=polRow(e.ix,s);if(a<2||a>rows.length)return;const r=rows[a-1];r.pay+=e.amt;if(e.kind==='lump')r.payL+=e.amt;else r.payR+=e.amt}))}
+/* payouts that fall in month m (0=Apr..11=Mar) of plan row a */
+function polMonth(s,a,m){let t=0;const ix=(m<=8?s.start+a-2:s.start+a-1)*12+(m+3)%12;(s.policies||[]).forEach(p=>polSched(p).forEach(e=>{if(e.ix===ix)t+=e.amt}));return t}
+function polTotals(p){const L=polSched(p);return{count:L.filter(e=>e.kind==='payout').length,pay:L.reduce((q,e)=>q+(e.kind==='payout'?e.amt:0),0),lump:L.reduce((q,e)=>q+(e.kind==='lump'?e.amt:0),0),first:L.length?L[0].date:'',last:L.length?L[L.length-1].date:''}}
+function cleanPol(a){const out=[],seen={};(Array.isArray(a)?a:[]).forEach(x=>{if(out.length>=PMAX||!x||typeof x!=='object')return;const name=String(x.name==null?'':x.name).replace(/\s+/g,' ').trim().slice(0,40);if(!name)return;
+const st=pDate(x.start);if(!st)return;const frq=PFREQ[x.freq]?x.freq:'yearly';let id=String(x.id==null?'':x.id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);if(!id||seen[id])id='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);seen[id]=1;
+const yrs=Math.round(num(x.yrs,1,60,1)),amt=Math.round(num(x.amt,0,1e10,0)*100)/100,lump=Math.round(num(x.lump,0,1e12,0)*100)/100;if(!(amt>0||lump>0))return;
+out.push({id,name,amt,freq:frq,start:x.start,yrs,lump,note:String(x.note==null?'':x.note).replace(/\r\n?/g,'\n').trim().slice(0,200),ca:num(x.ca,0,9e12,0)||undefined,ma:num(x.ma,0,9e12,0)||undefined})});return out}
 function calc(s){const rows=[],N=Math.max(2,Math.min(61,s.end-s.start+1));s.assets.forEach(x=>{if(x.type!=='gratuity')x.yrs=yrsOf(x,s)});
 for(let a=1;a<=N;a++){const p=a>1?rows[a-2]:null;
 const v=s.assets.map((x,i)=>{if(x.type==='gratuity')return(a-1<=s.grat.rem)?gr(s,a):p.v[i]*(1+x.ret);if(a===1)return x.value;
@@ -1980,8 +1992,9 @@ if(x.cmp==='oa')return o+ay+am+(o+ay+am)*x.ret;if(x.cmp==='monthly')return mcm(o
 return o+ay+am+o*x.ret*q.days/365+(mm*q.w+ay*q.rem)*x.ret/12});
 const tot=Math.round(v.reduce((q,c)=>q+c,0));
 rows.push({a,year:s.start+a-1,age:s.members.map(m=>m.age+a-1),st:s.members.map(m=>m.role==='Child'?stg(m,a):''),v,tot,add:a>1?s.assets.reduce((q,x)=>{if(x.type==='gratuity')return q;const k=fyInfo(x,s,a);return q+(k.act?(k.yp?x.add:0)+(x.madd||0)*k.n:0)},0):0,chg:p?tot-p.tot:0})}
+polApply(s,rows);
 const cl=n=>Math.min(N,Math.max(1,n)),ri=cl(s.ret-s.members[0].age+1)-1,hi=ri;
-const inc=s.assets.map((x,i)=>{const mt=matOf(x,s);return rows[ri].v[i]*(mt&&ri+1>=mt.row?0:x.ret)});return{rows,ri,hi,inc,incT:inc.reduce((q,c)=>q+c,0)}}
+const inc=s.assets.map((x,i)=>{const mt=matOf(x,s);return rows[ri].v[i]*(mt&&ri+1>=mt.row?0:x.ret)});const nx=rows[ri+1];return{rows,ri,hi,inc,incT:inc.reduce((q,c)=>q+c,0),payRet:nx?nx.payR:0,payT:rows.reduce((q,r)=>q+r.pay,0)}}
 //CALC-END
 function addInfo(D){const act=S.assets.filter(x=>!x.type&&(x.add>0||x.madd>0)&&x.yrs>=2),next=D.rows.length>1?D.rows[1].add:0,
 last=act.length?S.start+Math.max(...act.map(effYrs))-1:null,tot=D.rows.slice(1,D.ri+1).reduce((q,r)=>q+r.add,0);
@@ -1996,7 +2009,7 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 const num=(v,lo,hi,dv)=>{v=+v;return isFinite(v)?Math.min(hi,Math.max(lo,v)):dv};
 function cleanFh(f){if(!f||typeof f!=='object'||!f.v||typeof f.v!=='object')return null;const v={};let n=0;for(const k of Object.keys(f.v)){if(n>=160||!/^[A-Za-z][A-Za-z0-9]{0,29}$/.test(k)||k in Object.prototype)continue;const x=f.v[k];if((typeof x==='number'&&isFinite(x))||typeof x==='string'){v[k]=String(x).slice(0,24);n++}}return n?{v,t:num(f.t,0,9e12,0),rep:f.rep?1:0}:null}
 function cleanFhp(p){if(!p||typeof p!=='object'||!p.profiles||typeof p.profiles!=='object')return null;const out={};let n=0;for(const id of Object.keys(p.profiles)){if(n>=30)break;if(!/^[a-z0-9][a-z0-9-]{0,23}$/.test(id)||id in Object.prototype)continue;const q=p.profiles[id];if(!q||typeof q!=='object')continue;const nm=String(q.name==null?'':q.name).replace(/\s+/g,' ').trim().slice(0,30);if(!nm)continue;const f=cleanFh({v:q.v,t:q.t,rep:q.rep});out[id]={name:nm,v:f?f.v:null,t:f?f.t:0,rep:f?f.rep:0,created:num(q.created,0,9e12,0)};n++}const ids=Object.keys(out);if(!ids.length)return null;return{active:Object.prototype.hasOwnProperty.call(out,p.active)?p.active:ids[0],profiles:out}}
-const GPP_KEYS=['members','start','end','ret','retP','hor','goal','link','grat','assets'];
+const GPP_KEYS=['members','start','end','ret','retP','hor','goal','link','grat','assets','policies'];
 function cleanGpp(p,o){if(!p||typeof p!=='object'||!p.profiles||typeof p.profiles!=='object')return null;const out={};let n=0;for(const id of Object.keys(p.profiles)){if(n>=12)break;if(!/^[a-z0-9][a-z0-9-]{0,23}$/.test(id)||id in Object.prototype)continue;const q=p.profiles[id];if(!q||typeof q!=='object'||!q.d||typeof q.d!=='object')continue;const nm=String(q.name==null?'':q.name).replace(/\s+/g,' ').trim().slice(0,30);if(!nm)continue;let c;try{c=clean(Object.assign({},q.d,{assets:Array.isArray(q.d.assets)?q.d.assets:[],cats:o.cats,hide:o.hide}))}catch(e){continue}const d={};for(const k of GPP_KEYS)d[k]=JSON.parse(JSON.stringify(c[k]));out[id]={name:nm,d,created:num(q.created,0,9e12,0)};n++}const ids=Object.keys(out);if(!ids.length)return null;return{active:Object.prototype.hasOwnProperty.call(out,p.active)?p.active:ids[0],profiles:out}}
 function clean(o){const D=DEF();if(!o||typeof o!=='object'||!Array.isArray(o.assets))throw Error('Not a valid backup');
 const s=D;s.theme=['system','light','dark'].includes(o.theme)?o.theme:'light';s.palette=['green','grey','yellow','orange','blue','indigo','purple','rose'].includes(o.palette)?o.palette:'yellow';s.lang=LANGS.some(l=>l[0]===o.lang)?o.lang:'en';s.cc=/^#[0-9a-f]{6}$/i.test(o.cc||'')?o.cc.toLowerCase():null;s.hc=!!o.hc;
@@ -2006,7 +2019,7 @@ s.members=mem;
 s.start=num(o.start,1990,2100,2026);s.end=Math.round(num(o.end,s.start+1,s.start+60,s.start+23));s.ret=num(o.ret,mem[0].age,mem[0].age+(s.end-s.start),57);s.hor=Math.round(num(o.hor,0,60,6));s.retP=Math.round(num(o.retP,0,150,s.ret));s.goal=Math.round(num(o.goal,1,1e12,50000000));s.link=false;
 const g=o.grat||{};s.grat={basic:num(g.basic,0,1e8,0),svc:num(g.svc,0,60,0),rem:num(g.rem,0,60,0),cap:num(g.cap,0,1e9,2000000)};
 s.cats=cleanCats(o.cats);s.hide=cleanHide(o.hide);applyCats(s.cats,s.hide);
-s.assets=o.assets.slice(0,60).map((x,i)=>A(i+1,String(x.name||'Asset').slice(0,40),CATS.includes(x.cat)?x.cat:'Other',num(x.value,0,1e12,0),num(x.add,0,1e12,0),num(x.ret,0,.5,.07),(o.link!==false?s.hor:Math.round(num(x.yrs,0,60,6))),x.type==='gratuity'?'gratuity':undefined,num(x.madd,0,1e12,0),Math.round(num(x.amon,1,12,4)),vd(x.edate)||s.start+'-04-01',typeof x.icr==='boolean'?x.icr:undefined,vm(x.mfrom),vm(x.mto),x.cmp,!!x.yauto,Math.round(num(x.ycnt,0,60,0)),x.ca,x.ma,x.kind,vm(x.yfrom),vm(x.yto),Math.round(num(x.mat,0,2200,0)),x.comments));mig(s);s.fh=cleanFh(o.fh);s.fhp=cleanFhp(o.fhp);s.gpp=cleanGpp(o.gpp,o);if(s.gpp){const a=s.gpp.profiles[s.gpp.active];for(const k of GPP_KEYS)s[k]=JSON.parse(JSON.stringify(a.d[k]))}if(s.fhp){const a=s.fhp.profiles[s.fhp.active];s.fh=a&&a.v?{v:a.v,t:a.t,rep:a.rep}:null}
+s.assets=o.assets.slice(0,60).map((x,i)=>A(i+1,String(x.name||'Asset').slice(0,40),CATS.includes(x.cat)?x.cat:'Other',num(x.value,0,1e12,0),num(x.add,0,1e12,0),num(x.ret,0,.5,.07),(o.link!==false?s.hor:Math.round(num(x.yrs,0,60,6))),x.type==='gratuity'?'gratuity':undefined,num(x.madd,0,1e12,0),Math.round(num(x.amon,1,12,4)),vd(x.edate)||s.start+'-04-01',typeof x.icr==='boolean'?x.icr:undefined,vm(x.mfrom),vm(x.mto),x.cmp,!!x.yauto,Math.round(num(x.ycnt,0,60,0)),x.ca,x.ma,x.kind,vm(x.yfrom),vm(x.yto),Math.round(num(x.mat,0,2200,0)),x.comments));mig(s);s.policies=cleanPol(o.policies);s.polFh=o.polFh!==false;s.fh=cleanFh(o.fh);s.fhp=cleanFhp(o.fhp);s.gpp=cleanGpp(o.gpp,o);if(s.gpp){const a=s.gpp.profiles[s.gpp.active];for(const k of GPP_KEYS)s[k]=JSON.parse(JSON.stringify(a.d[k]))}if(s.fhp){const a=s.fhp.profiles[s.fhp.active];s.fh=a&&a.v?{v:a.v,t:a.t,rep:a.rep}:null}
 return s}
 try{S=clean(JSON.parse(localStorage.getItem(KEY)))}catch(e){S=DEF();if(UK||window.VR_PROD){S.assets=[];S.members=[MB(1,'Self','Self',DEF().members[0].age)];S.grat={basic:0,svc:0,rem:0,cap:0}}}
 const save=()=>{try{window.gppSync&&gppSync()}catch(e){}try{S.assets.forEach(x=>{if(x.type!=='gratuity')x.yrs=yrsOf(x,S)})}catch(e){}try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}queueSync()};
@@ -2035,6 +2048,15 @@ const COL=['#1f6feb','#e8590c','#2f9e44','#0d9488','#868e96','#f08c00','#d6336c'
 const $=s=>document.querySelector(s),dg=$('#dg');
 function toast(t,u){const d=document.createElement('div');d.textContent=tr(t,1);if(u){const b=document.createElement('button');b.textContent=tr('Undo',1);b.style.marginLeft='10px';b.onclick=()=>{d.remove();u()};d.append(b)}$('#toast').append(d);setTimeout(()=>d.remove(),u?8000:2800)}
 const undoer=()=>{const j=JSON.stringify(S);return()=>{S=clean(JSON.parse(j));save();render();toast('Restored')}};
+/* holding snapshots (database): read the holdings of the active plan, or put a saved copy back (with Undo) */
+window.vrHoldings={
+ get:function(){const P=S.gpp,pr=P&&P.profiles&&P.profiles[P.active],cp=x=>JSON.parse(JSON.stringify(x));let tot=0;S.assets.forEach(x=>{if(x.type!=='gratuity')tot+=+x.value||0});
+  return{plan:pr&&pr.name?String(pr.name):'',count:S.assets.length,total:Math.round(tot),data:{v:1,assets:cp(S.assets),grat:cp(S.grat),cats:cp(S.cats||[]),hide:cp(S.hide||[])}}},
+ apply:function(d){if(!d||!Array.isArray(d.assets))throw Error('This snapshot has no holdings.');
+  const u=undoer(),b=JSON.parse(JSON.stringify(S));delete b.gpp;delete b.fh;delete b.fhp;
+  b.assets=d.assets;b.grat=d.grat||b.grat;b.cats=d.cats||[];b.hide=d.hide||[];b.link=false;
+  let n;try{n=clean(b)}catch(e){try{applyCats(S.cats,S.hide)}catch(x){}throw e}
+  S.assets=n.assets;S.grat=n.grat;S.cats=n.cats;S.hide=n.hide;save();render();toast('Holdings restored',u)}};
 function theme(){document.documentElement.dataset.pal=S.palette||'yellow';window.applyCC&&applyCC();S.theme==='system'?document.documentElement.removeAttribute('data-theme'):document.documentElement.dataset.theme=S.theme}
 const GP=['Holdings','Reports','Dashboard'];/* Goal Planner sub-tabs; the first is the default */
 const SET=['Settings','Help','Users'];/* Settings sub-tabs; Users is offered only where it was before (when !UK) */
@@ -2069,7 +2091,7 @@ return`<section class="dz-card" aria-labelledby="dz-stt"><div class="dz-ch"><div
 <div class="dz-rb" role="progressbar" aria-label="Retirement readiness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${bw.toFixed(1)}"><i class="${ok?'dz-o':''}" style="width:${bw}%"></i></div>
 <div class="dz-rs"><span>Starting</span><span>50%</span><span>100% On track</span></div></div></section>`}
 function d3(c){const{D,rr,G}=c,proj=rr.tot,gap=Math.max(0,G-proj),ai=addInfo(D);
-return`<div class="dz-sum" aria-live="polite"><div><p class="dz-mini">Income at Retirement</p><p class="dz-sv">${f(D.incT/12)}</p><p class="dz-sn">per month · ${cr(D.incT)} / yr</p></div><div><p class="dz-mini">Added till retirement</p><p class="dz-sv dz-o">${cr(ai.tot)}</p><p class="dz-sn">${ai.sub}</p></div><div><p class="dz-mini">Retirement Date</p><p class="dz-sv">${dt(c.yr*12)}</p><p class="dz-sn dz-w">${c.yr} ${c.yr===1?'year':'years'} left</p></div><div><p class="dz-mini">Corpus at Retirement</p><p class="dz-sv dz-a">${cr(proj)}</p><p class="dz-sn ${gap?'dz-b':'dz-o'}">${gap?cr(gap)+' remaining gap':'Target fully covered'}</p></div></div>`}
+return`<div class="dz-sum" aria-live="polite"><div><p class="dz-mini">Income at Retirement</p><p class="dz-sv">${f(D.incT/12)}</p><p class="dz-sn">per month · ${cr(D.incT)} / yr${D.payRet>0?` · plus ${f(D.payRet/12)} / month policy payouts`:''}</p></div><div><p class="dz-mini">Added till retirement</p><p class="dz-sv dz-o">${cr(ai.tot)}</p><p class="dz-sn">${ai.sub}</p></div><div><p class="dz-mini">Retirement Date</p><p class="dz-sv">${dt(c.yr*12)}</p><p class="dz-sn dz-w">${c.yr} ${c.yr===1?'year':'years'} left</p></div><div><p class="dz-mini">Corpus at Retirement</p><p class="dz-sv dz-a">${cr(proj)}</p><p class="dz-sn ${gap?'dz-b':'dz-o'}">${gap?cr(gap)+' remaining gap':'Target fully covered'}</p></div></div>`}
 const runSvg=win=>`<svg class="rn ${win?'win':'tired'}" viewBox="0 0 48 58" width="46" height="56" aria-hidden="true"><ellipse cx="24" cy="56" rx="13" ry="2.2" fill="#00000026"/><g class="bob"><g class="lm a2" style="transform-origin:24px 22px"><rect x="21" y="20" width="6" height="15" rx="3" fill="#e0a56e"/></g><g class="lm l2" style="transform-origin:24px 36px"><rect x="20.5" y="35" width="7" height="17" rx="3.5" fill="var(--b1)"/><rect x="19" y="49" width="12" height="5.5" rx="2.7" fill="#fff" stroke="#c5ccd6"/></g><rect x="15" y="19" width="18" height="19" rx="7" fill="var(--b2)"/><rect x="15" y="26" width="18" height="3" fill="#fff" opacity=".75"/><g class="lm l1" style="transform-origin:24px 36px"><rect x="20.5" y="35" width="7" height="17" rx="3.5" fill="var(--b1)"/><rect x="19" y="49" width="12" height="5.5" rx="2.7" fill="#fff" stroke="#c5ccd6"/></g><g class="lm a1" style="transform-origin:24px 22px"><rect x="21" y="20" width="6" height="15" rx="3" fill="#f2c18d"/></g><circle cx="24" cy="11" r="8" fill="#f2c18d"/><rect x="16" y="6.5" width="16" height="3.6" rx="1.8" fill="#f2b24a"/><circle cx="28" cy="12" r="1.3" fill="#1b2430"/>${win?'<path d="M25.5 15.2q3 3 5.5 0" stroke="#1b2430" fill="none" stroke-width="1.4" stroke-linecap="round"/>':'<path d="M25.5 17q3-2 5.5 0" stroke="#1b2430" fill="none" stroke-width="1.4" stroke-linecap="round"/><path class="sd" d="M12.5 5c2 3 3 4.4 3 6a3 3 0 11-6 0c0-1.600 1-3 3-6z" fill="#7dd3fc"/>'}</g></svg>`;
 function runTrack(c){const{r0,rr,G}=c,proj=rr.tot,p=Math.min(100,proj/G*100),t0=Math.min(100,r0.tot/G*100),win=proj>=G,pc=Math.round(proj/G*100);
 const cf=win?['#ffd36b','#ff6b6b','#4ade80','#60a5fa','#f472b6','#ffd36b','#4ade80','#ff6b6b'].map((k,i)=>`<i class="cf" style="--k:${k};right:${4+i*8}px;animation-delay:${(i*.17).toFixed(2)}s"></i>`).join(''):'';
@@ -2080,7 +2102,7 @@ const tEnd=c.t==null?R.length-1:c.t,Hz=Math.max(tEnd,yr,1),cl=(v,lo,hi)=>Math.ma
 const tl=`<div class="dz-tl"><div class="dz-tlh"><span>Today</span><span>Planned retirement</span><span>Goal realization</span></div><div class="dz-tr"><i class="dz-tf" style="width:${pR}%"></i><span class="dz-mk m0"></span><span class="dz-mk m1" style="left:${pR}%"></span><span class="dz-mk m2 ${c.t!=null&&gl.diff>=0?'dz-o':''}" style="left:${pG}%"></span></div>
 <div class="dz-tlv"><div><b>Age ${a0}</b><span>${r0.year}</span></div><div class="dz-c"><b class="dz-a">Age ${S.ret}</b><span>${rr.year}</span></div><div class="dz-r"><b class="dz-a">${gl.when}</b><span>${gl.sub}</span></div></div></div>`;
 const risk=gap?`Current trajectory funds ${rp.toFixed(1)}% of the target, leaving a ${cr(gap)} gap.`:`Projected corpus fully covers the ${cr(G)} goal.`;
-const grow=`Corpus grows to ${cr(proj)} by age ${S.ret}, supporting ${f(D.incT/12)} per month.`;
+const grow=`Corpus grows to ${cr(proj)} by age ${S.ret}, supporting ${f(D.incT/12)} per month${D.payRet>0?`, plus ${f(D.payRet/12)} per month from policy payouts`:''}.`;
 const timing=c.t==null?`At the current pace the target is not reached before ${S.end}.`:c.t===0?'You already hold more than the goal today.':gl.diff>=0?`The target is projected around ${gl.when}, ${gl.diff>0?ym(gl.diff)+' before retirement':'right on time for retirement'}.`:`At this pace the target is projected around ${gl.when}, roughly ${ym(-gl.diff)} after retirement.`;
 const ins=`<section class="dz-card" data-sec="insights" aria-labelledby="dz-int"><div class="dz-ch"><div><p class="dz-ey">Projection Intelligence</p><h2 id="dz-int">Retirement timeline &amp; insights</h2></div><div class="dz-tag">Auto-generated</div></div>${tl}
 <div class="dz-in" aria-live="polite"><article class="${gap?'dz-r':'dz-g'}"><p class="dz-ik">Funding risk</p><p>${risk}</p></article><article class="dz-p"><p class="dz-ik">Projected growth</p><p>${grow}</p></article><article class="dz-a"><p class="dz-ik">Timing impact</p><p>${timing}</p></article></div></section>`;
@@ -2104,6 +2126,8 @@ return`<div class="ordbar"><button type="button" id="ordb">Reorder sections</but
 <div id="d2">${d2(c)}</div></div>`}
 function dzFill(){const r=$('#ra');if(!r)return;const mn=+r.min,mxv=+r.max,pc=mxv>mn?(+r.value-mn)/(mxv-mn)*100:0;r.style.background='linear-gradient(to right,var(--acb) 0%,var(--acb) '+pc+'%,var(--bd) '+pc+'%,var(--bd) 100%)'}
 function dupd(){const c=ctx();$('#d1').innerHTML=tr(d1(c),1);const e3=$('#d3');if(e3)e3.innerHTML=tr(d3(c),1);$('#d2').innerHTML=tr(d2(c),1);const rl=$('#rl');if(rl)rl.innerHTML=tr(rlText(c),1);const a0=S.members[0].age,mx=a0+c.R.length-1,m=$('#rm'),q=$('#rp');if(m)m.disabled=S.ret<=a0+1;if(q)q.disabled=S.ret>=mx;dzFill();
+/* keep the banner (Age · retiring at · goal) in step with the slider, the +/- buttons and the goal box, not only after a full redraw */
+const hl=document.querySelector('.dz-hl'),hi=window.gppHeroInner&&gppHeroInner();if(hl&&hi)hl.innerHTML=tr(hi,1);
 const g=S.goal/1e7,gi=$('#goalcr');if(gi&&document.activeElement!==gi)gi.value=+g.toFixed(4);document.querySelectorAll('[data-gp]').forEach(b=>b.setAttribute('aria-pressed',Math.abs(g-+b.dataset.gp)<.0005))}
 function stepRet(d){const a0=S.members[0].age,mx=a0+calc(S).rows.length-1;S.ret=S.retP=Math.min(mx,Math.max(a0+1,S.ret+d));save();const r=$('#ra');if(r)r.value=S.ret;dupd()}
 
@@ -2112,7 +2136,7 @@ function stepRet(d){const a0=S.members[0].age,mx=a0+calc(S).rows.length-1;S.ret=
 /* ===== Holdings: Export CSV (all holdings, exact columns, final Total row) ===== */
 const HCSV_COLS=['Holding Name','Category','Current Value','Yearly Addition','Monthly Addition','Addition Period','Expected Return (%)','Value at Retirement'];
 function holdCSV(){const D=calc(S),rh=D.rows[D.hi],q=v=>{v=String(v==null?'':v);return /[",\r\n]/.test(v)||/^\s|\s$/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
-const L=S.assets.map((x,i)=>({x,i,fv:rh.v[i],cur:D.rows[0].v[i]})),val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
+const L=S.assets.map((x,i)=>({x,i,fv:rh.v[i],cur:D.rows[0].v[i]})),val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='ca'?(o.x.ca||''):UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
 L.sort((a,b)=>(val(a)>val(b)?1:val(a)<val(b)?-1:0)*UI.d);
 const R=n=>Math.round(+n||0),rows=L.map(o=>{const x=o.x,per=x.type?'Auto (no additions)':[ayT(x,' '),matT(x,'')].filter(Boolean).join('; ');
 return{name:x.name,cat:x.cat+(x.type?' (auto)':''),cur:R(o.cur),yr:x.type?0:R(x.add),mo:x.type?0:R(x.madd),per,ret:+(x.ret*100).toFixed(2),fv:R(o.fv)}});
@@ -2230,11 +2254,11 @@ if(x.add>0&&!(x.madd>0)){let c=0,la=0,fa=0;for(let a=2;a<=Math.min(61,x.yrs);a++
 const y=effYrs(x);if(y<2)return'None';const m=(S.start+y-1)*12+3-st;if(m<1)return'None';const yy=Math.floor(m/12),mm=m%12;return(yy?yy+(yy>1?' yrs':' yr'):'')+(yy&&mm?' ':'')+(mm?mm+' mo':'')+s+(fr?MSN[e.mo-1]+' '+e.y+' \u2013 Mar '+(S.start+y-1):'till 1 Apr '+(S.start+y-1))};
 function holdRows(){const D=calc(S),rh=D.rows[D.hi],q=UI.q.toLowerCase();
 let L=S.assets.map((x,i)=>({x,i,fv:rh.v[i],cur:D.rows[0].v[i]})).filter(o=>o.x.name.toLowerCase().includes(q));
-const val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
+const val=o=>UI.k==='yrs'?o.x.yrs:UI.k==='fv'?o.fv:UI.k==='cur'?o.cur:UI.k==='ret'?o.x.ret:UI.k==='add'?o.x.add:UI.k==='ca'?(o.x.ca||''):UI.k==='cat'?o.x.cat:o.x.name.toLowerCase();
 L.sort((a,b)=>(val(a)>val(b)?1:val(a)<val(b)?-1:0)*UI.d);
 if(!L.length)return`<div class="em">${S.assets.length?'No holdings match your search or filter.':'No holdings yet. Click “Add holding” to begin.'}</div>`;
 const th=(k,t)=>`<th aria-sort="${UI.k===k?(UI.d>0?'ascending':'descending'):'none'}"><button data-k="${k}">${t}${UI.k===k?(UI.d>0?' ▲':' ▼'):''}</button></th>`,sh=o=>rh.tot?o.fv/rh.tot*100:0;
-const nm=o=>`<div class="nm"><div><b><a href="#" class="hyl" data-hy="${esc(String(o.x.id))}" role="button" aria-haspopup="dialog" title="View year-by-year report">${escn(o.x.name)}</a></b><div><span class="pill" style="--c:${CC[o.x.cat]}">${esc(o.x.cat)}${o.x.type?' · auto':''}</span>${(o.x.comments&&o.x.comments.length)?` <button type="button" class="ntb" data-e="${o.i}" data-nt="1" title="View notes" aria-label="View ${o.x.comments.length} notes for ${escn(o.x.name)}">📝 ${o.x.comments.length}</button>`:''}</div></div></div>`;
+const nm=o=>`<div class="nm"><div><b><a href="#" class="hyl" data-hy="${esc(String(o.x.id))}" role="button" aria-haspopup="dialog" title="View year-by-year report">${escn(o.x.name)}</a></b><div><span class="pill" style="--c:${CC[o.x.cat]}">${esc(o.x.cat)}${o.x.type?' · auto':''}</span>${(o.x.comments&&o.x.comments.length)?` <button type="button" class="ntb" data-e="${o.i}" data-nt="1" title="View notes" aria-label="View ${o.x.comments.length} notes for ${escn(o.x.name)}">📝 ${o.x.comments.length}</button>`:''}</div><div class="mu tsx" title="${esc(stampTxt(o.x))}">${o.x.ca?'Added '+esc(fdd(o.x.ca)):'Entry date not set'}</div></div></div>`;
 const bt=(o,ic)=>`<button class="tbs" data-e="${o.i}" aria-label="Edit ${escn(o.x.name)}" title="Edit">Edit</button> <button class="tbs d" data-x="${o.i}" aria-label="Delete ${escn(o.x.name)}" title="Delete">Delete</button>`;
 /* build 119: group holdings by category (header with count, current value, yearly addition and share; click a header to collapse) */
 if(UI.g===undefined){try{UI.g=localStorage.getItem('vr-grp')!=='0'}catch(e){UI.g=true}}UI.gc=UI.gc||{};
@@ -2252,27 +2276,28 @@ ${grp(L,o=>`<tr><td>${nm(o)}</td><td>${f(o.cur)}</td><td>${o.x.type?'—':f(o.x.
 function hold(){const n0=S.assets.length;UI.hc=null;if(!n0)return gpEmpty();
 const ic=(d)=>'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
 return`<div class="hp-head"><div class="hp-ttl"><h1>Portfolio Holdings</h1><p>${n0} active investment${n0===1?'':'s'} · Real-time valuation &amp; retirement forecasts</p></div><button type="button" class="p hp-add" id="add">${ic('<path d="M12 5v14M5 12h14"/>')}<span>Add holding</span></button></div>
-<div class="card hp-card"><div class="hp-tools"><label class="hp-search"><span class="sr-only">Search holdings</span>${ic('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<input id="q" type="search" placeholder="Search holdings…" aria-label="Search holdings" value="${esc(UI.q)}"></label><div class="hp-sort"><select id="sf" aria-label="Sort by">${[['name','Name'],['cat','Category'],['cur','Current value'],['add','Yearly addition'],['yrs','Addition years'],['ret','Return'],['fv','Value at retirement']].map(([k,t])=>`<option value="${k}" ${UI.k===k?'selected':''}>Sort: ${t}</option>`).join('')}</select><button type="button" id="sd" aria-label="Toggle sort direction" title="Toggle sort direction">${UI.d>0?'▲':'▼'}</button><button type="button" id="hg" class="hp-tgl" aria-pressed="${UI.g!==false}" aria-label="Group holdings by category" title="Group holdings by category">${ic('<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5"/>')}<span class="hp-sw" aria-hidden="true"></span></button></div><button type="button" id="mcat" class="hp-cat" title="Add or manage categories">${ic('<path d="M4 6h16M4 12h16M4 18h10"/>')}<span>Categories</span></button><button type="button" id="hcsvi" class="hp-cat hp-csv" title="Add or update holdings from a CSV file">${ic('<path d="M12 20V9M7 13l5-5 5 5M5 4h14"/>')}<span>Import CSV</span></button><button type="button" id="hcsv" class="hp-cat hp-csv" title="Download all holdings as a CSV file">${ic('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>')}<span>Export CSV</span></button></div><div id="hr">${holdRows()}</div></div>`}
+<div class="card hp-card"><div class="hp-tools"><label class="hp-search"><span class="sr-only">Search holdings</span>${ic('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<input id="q" type="search" placeholder="Search holdings…" aria-label="Search holdings" value="${esc(UI.q)}"></label><div class="hp-sort"><select id="sf" aria-label="Sort by">${[['name','Name'],['cat','Category'],['cur','Current value'],['add','Yearly addition'],['yrs','Addition years'],['ret','Return'],['fv','Value at retirement'],['ca','Entry date']].map(([k,t])=>`<option value="${k}" ${UI.k===k?'selected':''}>Sort: ${t}</option>`).join('')}</select><button type="button" id="sd" aria-label="Toggle sort direction" title="Toggle sort direction">${UI.d>0?'▲':'▼'}</button><button type="button" id="hg" class="hp-tgl" aria-pressed="${UI.g!==false}" aria-label="Group holdings by category" title="Group holdings by category">${ic('<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5"/>')}<span class="hp-sw" aria-hidden="true"></span></button></div><button type="button" id="mcat" class="hp-cat" title="Add or manage categories">${ic('<path d="M4 6h16M4 12h16M4 18h10"/>')}<span>Categories</span></button><button type="button" id="hcsvi" class="hp-cat hp-csv" title="Add or update holdings from a CSV file">${ic('<path d="M12 20V9M7 13l5-5 5 5M5 4h14"/>')}<span>Import CSV</span></button><button type="button" id="hcsv" class="hp-cat hp-csv" title="Download all holdings as a CSV file">${ic('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>')}<span>Export CSV</span></button></div><div id="hr">${holdRows()}</div></div>${window.polCard?polCard():''}`}
 function hin(n){if(n==null)return'—';n=Math.round(n);if(n<1)return'0';const p=[],c=Math.floor(n/1e7),l=Math.floor(n%1e7/1e5),t=Math.floor(n%1e5/1e3),r=n%1e3;if(c)p.push(c+' करोड़');if(l)p.push(l+' लाख');if(t)p.push(t+' हजार');if(r)p.push(r);return p.join(' ')}
 const LK=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}),lk=n=>n==null?'—':LK.format(n/1e5);
 const sh=s=>s.replace('School · Class ','School ').replace('College · Yr ','College ').replace(' of ','/');
 function repRows(){if(UI.rv==='sav')return window.repSavRows();if(UI.rv==='int')return window.repIRows();if(UI.rv==='month')return window.repMRows();const SEL=repSel();if(SEL.none)return window.repNone();if(SEL.min){const D0=calc(S);return window.repMin(D0.rows,{label:'As on',noun:'years',yr:true,lab:r=>'1 Apr '+r.year,hl:r=>r.a-1===D0.ri})}const D=calc(S),A=S.assets,Ms=S.members,kids=Ms.map((m,i)=>m.role==='Child'?i:-1).filter(i=>i>=0),q=UI.rq.trim().toLowerCase(),nf=A.length===1||(UI.rcl&&UI.rcl.length===1);
-const key=(r,k)=>k==='a'||k[0]==='s'?r.a:k==='year'||k==='fy'?r.year:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:(k==='int'||k==='mi')?(r.a>1?r.chg-r.add:-1e18):r.v[+k.slice(1)];
+const key=(r,k)=>k==='a'||k[0]==='s'?r.a:k==='year'||k==='fy'?r.year:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='pay'?r.pay:(k==='int'||k==='mi')?(r.a>1?r.chg-r.add:-1e18):r.v[+k.slice(1)];
 const L=D.rows.filter(r=>!q||[r.a,r.year,fyl(r.year),r.age.join(' '),r.st.join(' '),r.tot,f(r.tot),hin(r.tot),rowRoiTxt(r),...r.v.map(f)].join(' ').toLowerCase().includes(q));
 L.sort((x,y)=>{const a=key(x,UI.rk),b=key(y,UI.rk);return(a>b?1:a<b?-1:0)*UI.rd});
 if(!L.length)return`<div class="em">No years match your search.</div>`;
 const th=(k,t)=>`<th aria-sort="${UI.rk===k?(UI.rd>0?'ascending':'descending'):'none'}"><button data-rk="${k}">${t}${UI.rk===k?(UI.rd>0?' ▲':' ▼'):''}</button></th>`;
 const at=r=>`data-r="${r.a}" class="${r.a-1===D.ri?'a':''}${UI.sel===r.a?' sel':''}"`;
-return`<table class="rt"><tr>${th('a','S.No')}${nf?'':th('fy','Financial<br>Year')}${th('year','As on')}${th('age','Ages<br>'+Ms.map(m=>escn(m.name)).join(' / '))}${kids.map(k=>th('s'+k,escn(Ms[k].name)+'<br>stage')).join('')}${A.map((x,i)=>th('v'+i,escn(x.name)+'<br>(₹ L)')).join('')}${th('int','Yearly<br>income (₹)')}${th('mi','Monthly<br>income (₹)')}${th('tot','Year end<br>balance (₹)')}${th('roi','Blended<br>ROI')}${th('add','Amount<br>Deposited (₹)')}${th('chg','Change<br>(₹ L)')}${th('hi','Total (हिन्दी)')}</tr>
-${L.map(r=>`<tr ${at(r)} tabindex="0" aria-selected="${UI.sel===r.a}"><td>${r.a}</td>${nf?'':`<td class="nw">${fyl(r.year)}</td>`}<td class="nw">1 Apr ${r.year}</td><td class="nw">${r.age.join(' / ')}</td>${kids.map(k=>`<td class="l">${sh(r.st[k])}</td>`).join('')}${r.v.map(v=>`<td title="${f(v)}">${lk(v)}</td>`).join('')}<td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</td><td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</td><td class="nw" title="${f(r.tot)}"><b>${f(r.tot)}</b></td><td><b>${rowRoiTxt(r)}</b></td><td class="nw" title="${f(r.add)}">${f(r.add)}</td><td>${r.a>1?lk(r.chg):'—'}</td><td class="l">${hin(r.tot)}</td></tr>`).join('')}</table>
+return`<table class="rt"><tr>${th('a','S.No')}${nf?'':th('fy','Financial<br>Year')}${th('year','As on')}${th('age','Ages<br>'+Ms.map(m=>escn(m.name)).join(' / '))}${kids.map(k=>th('s'+k,escn(Ms[k].name)+'<br>stage')).join('')}${A.map((x,i)=>th('v'+i,escn(x.name)+'<br>(₹ L)')).join('')}${th('int','Yearly<br>income (₹)')}${th('mi','Monthly<br>income (₹)')}${S.policies.length?th('pay','Policy<br>payouts (₹)'):''}${th('tot','Year end<br>balance (₹)')}${th('roi','Blended<br>ROI')}${th('add','Amount<br>Deposited (₹)')}${th('chg','Change<br>(₹ L)')}${th('hi','Total (हिन्दी)')}</tr>
+${L.map(r=>`<tr ${at(r)} tabindex="0" aria-selected="${UI.sel===r.a}"><td>${r.a}</td>${nf?'':`<td class="nw">${fyl(r.year)}</td>`}<td class="nw">1 Apr ${r.year}</td><td class="nw">${r.age.join(' / ')}</td>${kids.map(k=>`<td class="l">${sh(r.st[k])}</td>`).join('')}${r.v.map(v=>`<td title="${f(v)}">${lk(v)}</td>`).join('')}<td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</td><td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</td>${S.policies.length?`<td class="nw">${r.pay>0?f(r.pay):'—'}</td>`:''}<td class="nw" title="${f(r.tot)}"><b>${f(r.tot)}</b></td><td><b>${rowRoiTxt(r)}</b></td><td class="nw" title="${f(r.add)}">${f(r.add)}</td><td>${r.a>1?lk(r.chg):'—'}</td><td class="l">${hin(r.tot)}</td></tr>`).join('')}</table>
 <div class="rc">${L.map(r=>`<details class="yc ${r.a-1===D.ri?'a':''}${UI.sel===r.a?' sel':''}" data-r="${r.a}"><summary><b>As on 1 Apr ${r.year}</b>${nf?'':' · '+fyl(r.year)} · Age ${r.age[0]}<br><span class="mu">Year end balance</span> <b>${f(r.tot)}</b><div class="mu">${hin(r.tot)}</div></summary><div class="kv">
 ${Ms.map((m,k)=>`<span>${escn(m.name)}</span><b>Age ${r.age[k]}${m.role==='Child'?' · '+sh(r.st[k]):''}</b>`).join('')}
-${A.map((x,i)=>`<span>${escn(x.name)}</span><b>${f(r.v[i])}</b>`).join('')}<span>Blended ROI</span><b>${rowRoiTxt(r)}</b><span>Yearly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</b><span>Monthly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</b><span>Amount deposited</span><b>${f(r.add)}</b><span>Yearly change</span><b>${r.a>1?f(r.chg):'—'}</b></div></details>`).join('')}</div>`}
+${A.map((x,i)=>`<span>${escn(x.name)}</span><b>${f(r.v[i])}</b>`).join('')}<span>Blended ROI</span><b>${rowRoiTxt(r)}</b><span>Yearly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</b><span>Monthly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</b>${S.policies.length?'<span>Policy payouts</span><b>'+(r.pay>0?f(r.pay):'—')+'</b>':''}<span>Amount deposited</span><b>${f(r.add)}</b><span>Yearly change</span><b>${r.a>1?f(r.chg):'—'}</b></div></details>`).join('')}</div>`}
 function rep(){const MV=UI.rv==='month',IV=UI.rv==='int',A=S.assets,yr=x=>x.yrs;
 if(UI.rv==='clients'&&window.gppClients)return gppClients();
+if(UI.rv==='ent'&&window.repEnt)return window.repEnt();
 if(!A.length)return gpEmpty();
 if(UI.rv==='sav'&&window.repSav)return window.repSav();
-const SEL=repSel(),so=IV?window.repISort():SEL.min?[['a','S.No'],['year',MV?'Month':'As on'],...SEL.idx.map(i=>['v'+i,A[i].name]),...(MV?[['tot','Month end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Interest earned']]:[['age','Age'],['tot','Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Yearly income'],['mi','Monthly income'],['chg','Yearly change']])]:[['a','S.No'],['year',MV?'Month':'As on'],['age','Age'],['tot',MV?'Month end balance':'Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int',MV?'Interest earned':'Yearly income'],...(MV?[]:[['mi','Monthly income']]),['chg',MV?'Monthly change':'Yearly change'],...A.map((x,i)=>['v'+i,x.name])];
+const SEL=repSel(),so=IV?window.repISort():SEL.min?[['a','S.No'],['year',MV?'Month':'As on'],...SEL.idx.map(i=>['v'+i,A[i].name]),...(MV?[['tot','Month end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Interest earned']]:[['age','Age'],['tot','Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Yearly income'],['mi','Monthly income'],['chg','Yearly change']])]:[['a','S.No'],['year',MV?'Month':'As on'],['age','Age'],['tot',MV?'Month end balance':'Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int',MV?'Interest earned':'Yearly income'],...(MV?[]:[['mi','Monthly income']]),...(S.policies.length?[['pay',MV?'Policy payout':'Policy payouts']]:[]),['chg',MV?'Monthly change':'Yearly change'],...A.map((x,i)=>['v'+i,x.name])];
 return`<div class="rph"><div><h1>${IV?'Year-by-Year Interest &amp; Monthly Income':MV?'Month-by-Month Financial Forecast':'Year-by-Year Financial Forecast'}</h1><div class="rpf">${IV?'Interest = Closing Balance − Opening Balance − Additions · Monthly Income = Interest ÷ 12':'Formula: Closing Balance = (Previous Closing × (1 + Return)) + Yearly Additions'}</div></div><div class="rpr">${rvTog()}</div></div>
 
 <div class="card"><div class="rph2"><h2>${IV?'Interest &amp; monthly income table':'Forecast table'}</h2><button id="csv">Copy as CSV</button></div>
@@ -2311,6 +2336,7 @@ MSG='';if(self)fixEnd();save();dg.close();render();toast(MSG||(i==null?'Member a
 const HELP=[['','Quick start',[
 ['1 · Check your family','<b>Settings &gt; Family</b>: confirm your name and age, then add spouse, children or parents. For a <b>Child</b>, set class today and college duration.'],
 ['2 · Add your holdings','<b>Holdings &gt; + Add holding</b>: name, category, current value <i>as on the Balance As Of date</i>, Balance As Of, expected return %, and choose <b>Monthly</b> or <b>Yearly contribution</b> with its From / Until months (Yearly also needs the Paid In Month). The retirement date is shown for information only. For a new holding the <b>Until</b> field starts at your retirement date (monthly: the March before it; yearly: the last Paid In Month before it), and you can change it. Once saved, a holding never changes when you change the retirement age; edit the holding to change it. Pick an <b>Interest Calculation</b>: PPF style (EPF, PPF, Sukanya), Annual compounding or Monthly compounding. A live preview shows total additions and the value at retirement before you save.'],
+['Policy Payouts','Under <b>Holdings</b>, the <b>Policy Payouts</b> section holds insurance policies that pay you money back, for example ₹94,000 a year for 10 years and then a lump sum. Click <b>Add policy</b> and enter the payout amount, how often it is paid (monthly, quarterly, half-yearly or yearly), the first payout date, the duration in years and an optional maturity lump sum (paid one period after the last regular payout). The payout schedule is created for you (use <b>Schedule</b> to see every date). Payouts are <b>income, not investment value</b>: they never change a holding or the corpus, so nothing is counted twice. They appear as a <b>Policy payouts</b> column in Yearly View, Monthly View and Interest &amp; Income (with a Total income column), add to the income shown at retirement, and can be included in the Retirement Planner (tick the box under the list). Each client keeps their own policies. Edit or Delete a policy at any time; Delete can be undone for a few seconds.'],
 ['3 · Set the forecast range','<b>Settings &gt; General</b>: starting and end year.'],
 ['4 · Plan retirement','<b>Summary</b>: drag the retirement-age slider and edit your goal. The goal tracker shows when you reach it.'],
 ['5 · Review and export','<b>Reports</b>: full year-by-year table. Use <b>Copy as CSV</b> to paste into Excel or Sheets. On <b>View Holding</b>, <b>Export CSV</b> saves all your holdings, with a Total row, as a CSV file. <b>Import CSV</b> reads a file in the same columns to add holdings or update ones with the same name; use <b>Download template</b> in the import window for a starting file. Value at Retirement is calculated by the app and ignored on import.']]],
@@ -2337,7 +2363,6 @@ const HELP=[['','Quick start',[
 ['Signing in and out','Vriddhi opens on a sign-in page. Enter your username and password to continue. Use <b>Sign out</b> in the top bar to lock it again. The admin (sjain) also sees a <b>Users</b> tab to add, edit, disable or delete mock users and to change passwords. Users you add are saved in the browser where you add them. To let someone sign in on another machine, send them a <b>Login link</b> (Settings → Users) or use <b>Export users file</b> and upload the file as <b>users.json</b> next to <b>index.html</b>; on the claude.ai version this happens automatically. After 5 wrong attempts you must wait 30 seconds. You stay signed in until you sign out or close the tab.'],
 ['Sharing the app','Anyone you share it with gets their own private data. They cannot see yours and you cannot see theirs.']]],
 ['','FAQ and limits',[
-['Status shows “Local only”','Sign out, sign in again and reload the page. Your changes are still saved in this browser meanwhile.'],
 ['Why does it say “Behind plan”?','Your goal is reached after your planned retirement date. Raise yearly additions or returns, retire later, or lower the goal.'],
 ['My numbers differ from Excel','Compare starting year, end year, each holding’s return, Balance As Of, addition years and the “Interest credited on 1 April” tick. Excel sheets often charge a full year of interest even for a mid-year Balance As Of date; Vriddhi counts it from the Balance As Of date (or the full financial year for credited-on-1-April holdings).'],
 ['Yield on opening is above my EPF rate','The yield includes interest on the deposits made during the year as well as on the opening balance, so it is slightly higher than the annual rate.'],
@@ -2354,6 +2379,7 @@ return`<div class="rph"><div><h1>Settings</h1></div></div>${fam()}
 <div class="card"><h2>General assumptions</h2><div class="r">${n('st','Starting year',S.start)}${n('en','End year',S.end)}</div><p class="mu">Forecast covers ${S.end-S.start+1} years: ${S.start}–${S.end}, your age ${S.members[0].age} to ${S.members[0].age+S.end-S.start}. The end year can be at most 60 years after the start, and your age cannot pass 100.</p>
 </div>
 ${window.rcolsUI?rcolsUI():''}
+${window.snapUI?snapUI():''}
 <div class="card"><h2>Appearance & backup</h2><div class="r"><div><label for="th">Display mode</label><select id="th">${['system','light','dark'].map(t=>`<option ${t===S.theme?'selected':''}>${t}</option>`).join('')}</select></div><div><label for="lsel">Language</label><select id="lsel">${LANGS.map(l=>`<option value="${l[0]}" ${l[0]===S.lang?'selected':''}>${l[1]}</option>`).join('')}</select></div></div>
 <div class="sub2">Colour theme</div>${window.ccUI?ccUI():''}
 ${window.lookUI?lookUI():''}<div class="sub2">Backup</div><div class="acts"><button id="ex">Export backup</button><button id="im">Import backup</button></div>
@@ -2376,7 +2402,7 @@ const body=g?`<p class="mu">Value is calculated automatically. Only the expected
 const grow=`<section class="hs"><h3>Growth Assumptions</h3>${hf('fr','Expected Return (% p.a.)',+(x.ret*100).toFixed(3),'min=0 max=50 step=any')}${g?'':`<div class="hf1"><label for="fmat">Maturity Year (optional)</label><input id="fmat" type="number" inputmode="numeric" min="1990" max="2200" step="1" placeholder="e.g. ${S.start+6}" value="${esc(x.mat||'')}"><small class="hh" id="fmath"></small></div><div class="hf1"><label id="fcml">Interest Calculation</label><div class="cmp" role="radiogroup" aria-labelledby="fcml">${CMPS.map(c=>`<label class="cc"><input type="radio" name="fcm" value="${c[0]}" ${x.cmp===c[0]?'checked':''}><span><b>${c[1]}</b><small>${c[2]}</small></span></label>`).join('')}</div></div>`}</section>`;
 const wantN=!!window.__openNotes;window.__openNotes=false;
 const nts=`<section class="hs ntsec"><h3>Notes &amp; History <span id="ntn" class="ntn"></span></h3><p class="mu ntl0">Dated comments for this holding only. They are saved when you click Save Holding.</p><div id="ntx"><div class="ntf"><div class="hf1"><label for="ntt">Note</label><textarea id="ntt" rows="3" maxlength="500" placeholder="e.g. Raised the SIP after bonus, switched fund, interest rate revised…"></textarea><small class="hh" id="ntc">0 / 500</small></div><div class="ntr"><div class="hf1"><label for="ntd">Date</label><input id="ntd" type="date" value="${todayStr()}" min="1990-01-01" max="2200-12-31"></div><button type="button" class="p" id="nta">Add Comment</button></div><div class="er" id="nte" role="alert"></div></div><div class="ntl" id="ntl" role="list" aria-label="Comment history"></div></div></section>`;
-open(`<form id="fm" novalidate><h2>${i==null?'Add':'Edit'} Holding</h2><section class="hs"><h3>Holding Details</h3><div class="hg"><div class="hf1"><label for="fn">Name</label><input id="fn" type="text" value="${escn(x.name)}" maxlength=40 required></div><div class="hf1"><label for="fc">Category</label><select id="fc">${CATS.map(c=>catOpt(c,c===x.cat)).join('')}<option value="__new">＋ New category…</option></select></div></div></section>${body}${grow}${nts}<div id="hp" class="pvbox" aria-live="polite"></div><div id="fe" class="er" role="alert"></div><div class="tb"><button type="button" id="cn">Cancel</button><button class="p">Save Holding</button></div></form>`);
+open(`<form id="fm" novalidate><h2>${i==null?'Add':'Edit'} Holding</h2>${i==null?'':'<div class="tsx">'+esc(stampTxt(x))+'</div>'}<section class="hs"><h3>Holding Details</h3><div class="hg"><div class="hf1"><label for="fn">Name</label><input id="fn" type="text" value="${escn(x.name)}" maxlength=40 required></div><div class="hf1"><label for="fc">Category</label><select id="fc">${CATS.map(c=>catOpt(c,c===x.cat)).join('')}<option value="__new">＋ New category…</option></select></div><div class="hf1"><label for="fed">Entry date</label><input id="fed" type="date" value="${x.ca?ymdLoc(x.ca):(i==null?todayStr():'')}" min="1990-01-01" max="${todayStr()}"><small class="hh">When you added this holding. It does not change any calculation.</small></div></div></section>${body}${grow}${nts}<div id="hp" class="pvbox" aria-live="polite"></div><div id="fe" class="er" role="alert"></div><div class="tb"><button type="button" id="cn">Cancel</button><button class="p">Save Holding</button></div></form>`);
 dg.classList.add('hf');$('#cn').onclick=()=>dg.close();$('#fn').focus();
 /* Notes & History: kept as a draft until "Save Holding" */
 let cmts=cmClean(x.comments),edId=null,delId=null;const NT_MAX=500,NT_PER=100,NT_TOT=100000;
@@ -2466,7 +2492,7 @@ fm.onsubmit=e=>{e.preventDefault();
 if($('#ntt').value.trim()){$('#fe').textContent=tr('You have a note that has not been added. Click "Add Comment" to keep it, or clear the note box.',1);ntGo();$('#ntt').focus();return}
 if(edId){$('#fe').textContent=tr('Finish editing your note (Save or Cancel) before saving the holding.',1);ntGo();return}
 const o=vf();if(o.er.length){$('#fe').textContent=tr(o.er.join(' '),1);return}
-const n=mk(o),now=new Date().toISOString();n.ma=now;n.ca=i==null?now:(x.ca||'');if(i==null)S.assets.push(n);else S.assets[i]=n;save();dg.close();if(GP.includes(UI.tab))UI.tab='Holdings';render();window.scrollTo(0,0);toast(i==null?'Holding added':'Holding updated')}}
+const n=mk(o),now=new Date().toISOString();n.ma=now;n.ca=i==null?now:(x.ca||'');const ev=(($('#fed')||{}).value||'').trim();if(ev){if(!/^\d{4}-\d\d-\d\d$/.test(ev)||isNaN(new Date(ev))||ev>todayStr()||ev<'1990-01-01'){$('#fe').textContent=tr('Entry date must be a real date, not in the future.',1);return}if(!(x.ca&&ymdLoc(x.ca)===ev)&&!(i==null&&ev===todayStr())){const q=ev.split('-');n.ca=new Date(+q[0],+q[1]-1,+q[2],12,0,0).toISOString()}}if(i==null)S.assets.push(n);else S.assets[i]=n;save();dg.close();if(GP.includes(UI.tab))UI.tab='Holdings';render();window.scrollTo(0,0);toast(i==null?'Holding added':'Holding updated')}}
 function text(title,t,apply){open(`<h2>${title}</h2><textarea id="tx" rows="9" ${apply?'':'readonly'} aria-label="${title}">${esc(t)}</textarea><div id="fe" class="er" role="alert"></div><div class="tb">${apply?'<button class="p" id="ap">Apply</button>':'<button class="p" id="cp">Copy</button>'}<button id="cn">Close</button></div>`);
 $('#cn').onclick=()=>dg.close();const ta=$('#tx');ta.focus();if(!apply)ta.select();
 if(apply)$('#ap').onclick=()=>{try{apply(ta.value);dg.close()}catch(e){$('#fe').textContent=tr(e.message,1)}};
@@ -2735,22 +2761,22 @@ for(let i=0;i<v.length;i++)if(!on[i])v[i]=null;
 const live=v.filter(function(w){return w!=null}),tot=live.length?Math.round(live.reduce(function(q,w){return q+w},0)):null,pv=live.length?Math.round(v.reduce(function(q,w,i){return w==null?q:q+last[i]},0)):0;
 const add=A.reduce(function(q,x,i){const k=fi[i];if(!k||!k.act)return q;return q+(k.ms[m-1]?(x.madd||0):0)+((k.yp&&FYM(x.amon||4)===m-1)?x.add:0)},0);
 const dep=A.map(function(x,i){const k=fi[i];return!!(k&&k.act&&(k.ms[m-1]||(k.yp&&FYM(x.amon||4)===m-1)))});
-rows.push({a:(a-2)*12+m,year:c.year,mi:m-1,label:MN[cm]+' '+cy,age:c.age,st:c.st,v:v,dep:dep,ad:A.map(function(x,i){const k=fi[i];return!k||!k.act?0:(k.ms[m-1]?(x.madd||0):0)+((k.yp&&FYM(x.amon||4)===m-1)?x.add:0)}),pv:last.slice(),tot:tot,chg:tot==null?null:tot-pv,add:add});v.forEach(function(w,i){if(w!=null)last[i]=w})}}
+rows.push({a:(a-2)*12+m,year:c.year,mi:m-1,label:MN[cm]+' '+cy,age:c.age,st:c.st,v:v,dep:dep,ad:A.map(function(x,i){const k=fi[i];return!k||!k.act?0:(k.ms[m-1]?(x.madd||0):0)+((k.yp&&FYM(x.amon||4)===m-1)?x.add:0)}),pv:last.slice(),tot:tot,chg:tot==null?null:tot-pv,add:add,pay:polMonth(S,a,m-1)});v.forEach(function(w,i){if(w!=null)last[i]=w})}}
 return{rows:rows,D:D}};
-window.rvTog=function(){return'<div class="seg" role="group" aria-label="Report type" style="margin-bottom:14px">'+[['clients','Clients'],['year','Yearly View'],['month','Monthly View'],['int','Interest & Income'],['sav','Yearly Savings']].map(function(k){return'<button type="button" data-rv="'+k[0]+'" aria-pressed="'+((UI.rv||'year')===k[0])+'">'+k[1]+'</button>'}).join('')+'</div>'};
+window.rvTog=function(){return'<div class="seg" role="group" aria-label="Report type" style="margin-bottom:14px">'+[['clients','Clients'],['year','Yearly View'],['month','Monthly View'],['int','Interest & Income'],['sav','Yearly Savings'],['ent','Entry Dates']].map(function(k){return'<button type="button" data-rv="'+k[0]+'" aria-pressed="'+((UI.rv||'year')===k[0])+'">'+k[1]+'</button>'}).join('')+'</div>'};
 window.repMRows=function(){const S0=repSel();if(S0.none)return window.repNone();if(S0.min){const m0=monthData(),ry0=m0.D.rows[m0.D.ri].year;return window.repMin(m0.rows,{label:'Month',noun:'months',lab:r=>r.label,hl:r=>r.year===ry0&&r.mi===11})}const md=monthData(),D=md.D,A=S.assets,Ms=S.members,kids=Ms.map(function(m,i){return m.role==='Child'?i:-1}).filter(function(i){return i>=0}),q=UI.rq.trim().toLowerCase(),ry=D.rows[D.ri].year,nf=A.length===1||(UI.rcl&&UI.rcl.length===1);
-const key=function(r,k){return k==='a'||k==='year'||k==='fy'||k[0]==='s'?r.a:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='int'?(r.chg==null?-1e18:r.chg-r.add):r.v[+k.slice(1)]};
+const key=function(r,k){return k==='a'||k==='year'||k==='fy'||k[0]==='s'?r.a:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='pay'?r.pay:k==='int'?(r.chg==null?-1e18:r.chg-r.add):r.v[+k.slice(1)]};
 const L=md.rows.filter(function(r){return!q||[r.a,r.label,fyl(r.year),r.age.join(' '),r.st.join(' '),r.tot,f(r.tot),hin(r.tot),rowRoiTxt(r)].concat(r.v.map(f)).join(' ').toLowerCase().indexOf(q)>-1});
 L.sort(function(x,y){const a=key(x,UI.rk),b=key(y,UI.rk);return(a>b?1:a<b?-1:0)*UI.rd});
 if(!L.length)return'<div class="em">No months match your search.</div>';
 const th=function(k,t){return'<th aria-sort="'+(UI.rk===k?(UI.rd>0?'ascending':'descending'):'none')+'"><button data-rk="'+k+'">'+t+(UI.rk===k?(UI.rd>0?' ▲':' ▼'):'')+'</button></th>'};
 const at=function(r){return'data-r="'+r.a+'" class="'+(r.year===ry&&r.mi===11?'a':'')+(UI.sel===r.a?' sel':'')+'"'};
-return'<table class="rt"><tr>'+th('a','S.No')+(nf?'':th('fy','Financial<br>Year'))+th('year','Month')+th('age','Ages<br>'+Ms.map(function(m){return escn(m.name)}).join(' / '))+kids.map(function(k){return th('s'+k,escn(Ms[k].name)+'<br>stage')}).join('')+A.map(function(x,i){return th('v'+i,escn(x.name)+'<br>(₹ L)')}).join('')+th('tot','Month end<br>balance (₹)')+th('roi','Blended<br>ROI')+th('add','Amount<br>Deposited (₹)')+th('int','Interest<br>Earned (₹)')+th('chg','Change<br>(₹ L)')+th('hi','Total (हिन्दी)')+'</tr>'
-+L.map(function(r){return'<tr '+at(r)+' tabindex="0" aria-selected="'+(UI.sel===r.a)+'"><td>'+r.a+'</td>'+(nf?'':'<td class="nw">'+fyl(r.year)+'</td>')+'<td class="nw">'+r.label+'</td><td class="nw">'+r.age.join(' / ')+'</td>'+kids.map(function(k){return'<td class="l">'+sh(r.st[k])+'</td>'}).join('')+r.v.map(function(v,i){if(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&v!=null&&r.dep&&!r.dep[i])return'<td>-</td>';return'<td title="'+f(v)+'">'+lk(v)+'</td>'}).join('')+'<td class="nw" title="'+f(r.tot)+'"><b>'+f(r.tot)+'</b></td><td><b>'+rowRoiTxt(r)+'</b></td><td class="nw" title="'+f(r.add)+'">'+f(r.add)+'</td><td class="nw">'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</td><td>'+lk(r.chg)+'</td><td class="l">'+hin(r.tot)+'</td></tr>'}).join('')+'</table>'
-+'<div class="rc">'+L.map(function(r){return'<details class="yc '+(r.year===ry&&r.mi===11?'a':'')+(UI.sel===r.a?' sel':'')+'" data-r="'+r.a+'"><summary><b>'+r.label+'</b>'+(nf?'':' · '+fyl(r.year))+' · Age '+r.age[0]+'<br><span class="mu">Month end balance</span> <b>'+f(r.tot)+'</b><div class="mu">'+hin(r.tot)+'</div></summary><div class="kv">'+Ms.map(function(m,k){return'<span>'+escn(m.name)+'</span><b>Age '+r.age[k]+(m.role==='Child'?' · '+sh(r.st[k]):'')+'</b>'}).join('')+A.map(function(x,i){return'<span>'+escn(x.name)+'</span><b>'+(x.cmp==='oa'&&x.type!=='gratuity'&&r.v[i]!=null&&r.dep&&!r.dep[i]?'-':f(r.v[i]))+'</b>'}).join('')+'<span>Blended ROI</span><b>'+rowRoiTxt(r)+'</b><span>Amount deposited</span><b>'+f(r.add)+'</b><span>Interest earned</span><b>'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</b><span>Monthly change</span><b>'+f(r.chg)+'</b></div></details>'}).join('')+'</div>'
+return'<table class="rt"><tr>'+th('a','S.No')+(nf?'':th('fy','Financial<br>Year'))+th('year','Month')+th('age','Ages<br>'+Ms.map(function(m){return escn(m.name)}).join(' / '))+kids.map(function(k){return th('s'+k,escn(Ms[k].name)+'<br>stage')}).join('')+A.map(function(x,i){return th('v'+i,escn(x.name)+'<br>(₹ L)')}).join('')+th('tot','Month end<br>balance (₹)')+th('roi','Blended<br>ROI')+th('add','Amount<br>Deposited (₹)')+th('int','Interest<br>Earned (₹)')+(S.policies.length?th('pay','Policy<br>payout (₹)'):'')+th('chg','Change<br>(₹ L)')+th('hi','Total (हिन्दी)')+'</tr>'
++L.map(function(r){return'<tr '+at(r)+' tabindex="0" aria-selected="'+(UI.sel===r.a)+'"><td>'+r.a+'</td>'+(nf?'':'<td class="nw">'+fyl(r.year)+'</td>')+'<td class="nw">'+r.label+'</td><td class="nw">'+r.age.join(' / ')+'</td>'+kids.map(function(k){return'<td class="l">'+sh(r.st[k])+'</td>'}).join('')+r.v.map(function(v,i){if(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&v!=null&&r.dep&&!r.dep[i])return'<td>-</td>';return'<td title="'+f(v)+'">'+lk(v)+'</td>'}).join('')+'<td class="nw" title="'+f(r.tot)+'"><b>'+f(r.tot)+'</b></td><td><b>'+rowRoiTxt(r)+'</b></td><td class="nw" title="'+f(r.add)+'">'+f(r.add)+'</td><td class="nw">'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</td>'+(S.policies.length?'<td class="nw">'+(r.pay>0?f(r.pay):'—')+'</td>':'')+'<td>'+lk(r.chg)+'</td><td class="l">'+hin(r.tot)+'</td></tr>'}).join('')+'</table>'
++'<div class="rc">'+L.map(function(r){return'<details class="yc '+(r.year===ry&&r.mi===11?'a':'')+(UI.sel===r.a?' sel':'')+'" data-r="'+r.a+'"><summary><b>'+r.label+'</b>'+(nf?'':' · '+fyl(r.year))+' · Age '+r.age[0]+'<br><span class="mu">Month end balance</span> <b>'+f(r.tot)+'</b><div class="mu">'+hin(r.tot)+'</div></summary><div class="kv">'+Ms.map(function(m,k){return'<span>'+escn(m.name)+'</span><b>Age '+r.age[k]+(m.role==='Child'?' · '+sh(r.st[k]):'')+'</b>'}).join('')+A.map(function(x,i){return'<span>'+escn(x.name)+'</span><b>'+(x.cmp==='oa'&&x.type!=='gratuity'&&r.v[i]!=null&&r.dep&&!r.dep[i]?'-':f(r.v[i]))+'</b>'}).join('')+'<span>Blended ROI</span><b>'+rowRoiTxt(r)+'</b><span>Amount deposited</span><b>'+f(r.add)+'</b><span>Interest earned</span><b>'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</b>'+(S.policies.length?'<span>Policy payout</span><b>'+(r.pay>0?f(r.pay):'—')+'</b>':'')+'<span>Monthly change</span><b>'+f(r.chg)+'</b></div></details>'}).join('')+'</div>'
 };
 window.monthCSV=function(){const q=function(v){return'"'+String(v).replace(/"/g,'""')+'"'},md=monthData(),A=S.assets,Ms=S.members,kids=Ms.map(function(m,i){return m.role==='Child'?i:-1}).filter(function(i){return i>=0});
-return[['S.No','Month','Year'].concat(Ms.map(function(m){return'Age ('+m.name+')'}),kids.map(function(k){return Ms[k].name+' Stage'}),A.map(function(x){return x.name}),['Month end balance','Blended ROI %','Amount deposited','Interest earned','Monthly change','Total (Hindi)']).map(q).join(',')].concat(md.rows.map(function(r){return[r.a,r.label.split(' ')[0],r.label.split(' ')[1]].concat(r.age,kids.map(function(k){return q(r.st[k])}),r.v.map(function(x,i){return x==null?'—':(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&r.dep&&!r.dep[i]?'-':Math.round(x))}),[r.tot==null?'—':r.tot,r.tot==null?'—':rowRoiPct(r),Math.round(r.add),r.chg==null?'—':Math.round(r.chg-r.add),r.chg==null?'—':r.chg,q(hin(r.tot))]).join(',')})).join('\n')};
+return[['S.No','Month','Year'].concat(Ms.map(function(m){return'Age ('+m.name+')'}),kids.map(function(k){return Ms[k].name+' Stage'}),A.map(function(x){return x.name}),['Month end balance','Blended ROI %','Amount deposited','Interest earned'].concat(S.policies.length?['Policy payout']:[],['Monthly change','Total (Hindi)'])).map(q).join(',')].concat(md.rows.map(function(r){return[r.a,r.label.split(' ')[0],r.label.split(' ')[1]].concat(r.age,kids.map(function(k){return q(r.st[k])}),r.v.map(function(x,i){return x==null?'—':(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&r.dep&&!r.dep[i]?'-':Math.round(x))}),[r.tot==null?'—':r.tot,r.tot==null?'—':rowRoiPct(r),Math.round(r.add),r.chg==null?'—':Math.round(r.chg-r.add)].concat(S.policies.length?[Math.round(r.pay)]:[],[r.chg==null?'—':r.chg,q(hin(r.tot))])).join(',')})).join('\n')};
 document.addEventListener('click',function(e){const b=e.target.closest&&e.target.closest('[data-rv]');if(!b)return;
 UI.rv=b.dataset.rv;UI.sel=null;UI.rk='a';UI.rd=1;UI.rq='';render()});
 })();</script>
@@ -2764,7 +2790,7 @@ function data(){
  for(var a=2;a<=R.length;a++){
   var y=S.start+a-2,by={},tot=0;
   SEL.idx.forEach(function(i){var x=A[i];if(x.type==='gratuity')return;var k=fyInfo(x,S,a),v=k.act?(k.yp?x.add:0)+(x.madd||0)*k.n:0;if(v>0){by[x.cat]=(by[x.cat]||0)+v;tot+=v;if(cats.indexOf(x.cat)<0)cats.push(x.cat)}});
-  out.push({a:a,fy:fyLab(y),age:R[a-2].age.join(' / '),a0:R[a-2].age[0],by:by,tot:tot,ret:a-1===D.ri,chk:R[a-1].add});
+  out.push({a:a,fy:fyLab(y),age:R[a-1].age.join(' / '),a0:R[a-1].age[0],by:by,tot:tot,ret:a-1===D.ri,chk:R[a-1].add}); /* age = age at the END of the financial year, same as Yearly View and the 'At retirement (age N)' figure */
  }
  var ord=CATS||[];cats.sort(function(p,q){var i=ord.indexOf(p),j=ord.indexOf(q);return(i<0?99:i)-(j<0?99:j)});
  return {sel:SEL,rows:out,cats:cats,ri:D.ri}
@@ -2798,7 +2824,7 @@ window.repSav=function(){
  sum=(d.sel.none||!cats.length)?'':'<div class="rsum" aria-label="Savings summary"><div><span class="mu">Saved till retirement</span><b>'+f(tillRet)+'</b></div><div><span class="mu">Saved in the whole plan</span><b>'+f(all)+'</b></div><div><span class="mu">Saving years</span><b>'+sy.length+'</b><span class="mu">'+(first?first.fy+' to '+last.fy:'')+'</span></div><div><span class="mu">Average per saving year</span><b>'+f(avg)+'</b></div></div>';
  return head+'<div class="card vr-savpg"><div class="rph2"><h2>Savings by year and category</h2><button id="savcsv" type="button">Copy as CSV</button></div>'+window.rsDrops()+sum+
   '<div class="tb"><input id="rq" type="search" placeholder="Search year, age, amount…" aria-label="Search savings" value="'+esc(UI.rq)+'"><select id="rsf" aria-label="Sort by">'+so.map(function(p){return '<option value="'+esc(p[0])+'"'+(d.rk===p[0]?' selected':'')+'>Sort: '+esc(p[1])+'</option>'}).join('')+'</select><button id="rsd" aria-label="Toggle sort direction">'+(UI.rd>0?'▲':'▼')+'</button></div>'+
-  '<div id="rr" class="mw">'+window.repSavRows()+'</div><div class="mu" style="margin-top:8px">Category = the category you gave each holding · savings are yearly plus monthly additions · totals match the Amount deposited column in Yearly View · Retired = the year you retire · click a heading to sort</div></div>'};
+  '<div id="rr" class="mw">'+window.repSavRows()+'</div><div class="mu" style="margin-top:8px">Category = the category you gave each holding · savings are yearly plus monthly additions · totals match the Amount deposited column in Yearly View · Age = age at the end of the financial year · Retired = the year you reach your retirement age · click a heading to sort</div></div>'};
 document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('#savcsv');if(!b)return;
  var d=view(),q=function(v){v=String(v==null?'':v);return /[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v},
  lines=[['Financial year','Age'].concat(d.cats,['Total saved in the year']).map(q).join(',')].concat(d.L.map(function(o){return [o.fy,o.age].concat(d.cats.map(function(c){return Math.round(o.by[c]||0)}),[Math.round(o.tot)]).map(q).join(',')}));
@@ -3203,39 +3229,39 @@ window.intData=function(){const D=calc(S),R=D.rows,A=S.assets,out=[];
 for(let a=2;a<=R.length;a++){const o=R[a-2],c=R[a-1];
 const ad=A.map(function(x){if(x.type==='gratuity')return 0;const k=fyInfo(x,S,a);return k.act?((k.yp?x.add:0)+(x.madd||0)*k.n):0});
 const it=A.map(function(x,i){return c.v[i]-o.v[i]-ad[i]});
-out.push({a:a-1,fy:'FY '+o.year+'-'+String(c.year).slice(-2),age:o.age,o:o,c:c,ad:ad,it:it})}
+out.push({a:a-1,fy:'FY '+o.year+'-'+String(c.year).slice(-2),age:o.age,o:o,c:c,ad:ad,it:it,pay:c.pay||0,payL:c.payL||0})}
 return{rows:out,D:D}};
 window.intCalc=function(r,idx){const s=function(v){return idx.reduce(function(t,i){return t+v[i]},0)};
 const open=s(r.o.v),close=s(r.c.v),add=s(r.ad),intr=s(r.it);return{open:open,close:close,add:add,intr:intr,mi:intr/12,yl:(function(){var b=idx.reduce(function(t,i){return t+r.o.v[i]+(S.assets[i]&&S.assets[i].cmp==='oa'?r.ad[i]:0)},0);return b>0?intr/b:null})()}};
 window.repISort=function(){const A=S.assets,idx=repSel().idx;
-return[['a','S.No'],['year','Financial year'],['age','Age'],['open','Opening balance'],['add','Additions']].concat(idx.map(function(i){return['v'+i,A[i].name+' interest']}),[['int','Interest earned'],['mi','Monthly income'],['roi','Yield on opening'],['close','Closing balance']])};
+return[['a','S.No'],['year','Financial year'],['age','Age'],['open','Opening balance'],['add','Additions']].concat(idx.map(function(i){return['v'+i,A[i].name+' interest']}),[['int','Interest earned'],['mi','Monthly income'],['roi','Yield on opening']],S.policies.length?[['pay','Policy payouts'],['ti','Total income']]:[],[['close','Closing balance']])};
 window.repIRows=function(){const SEL=repSel();if(SEL.none)return window.repNone();
 const idx=SEL.idx,A=S.assets,q=UI.rq.trim().toLowerCase(),md=intData(),ri=md.D.ri;
 const rows=md.rows.map(function(r){return Object.assign({m:intCalc(r,idx)},r)});
-const key=function(r,k){return k==='a'||k==='year'?r.a:k==='age'?r.age[0]:k==='open'?r.m.open:k==='add'?r.m.add:k==='int'?r.m.intr:k==='mi'?r.m.mi:k==='close'?r.m.close:k==='roi'?(r.m.yl==null?-1:r.m.yl):k[0]==='v'?r.it[+k.slice(1)]:r.a};
+const key=function(r,k){return k==='a'||k==='year'?r.a:k==='age'?r.age[0]:k==='open'?r.m.open:k==='add'?r.m.add:k==='int'?r.m.intr:k==='mi'?r.m.mi:k==='pay'?r.pay:k==='ti'?(r.m.intr+r.pay):k==='close'?r.m.close:k==='roi'?(r.m.yl==null?-1:r.m.yl):k[0]==='v'?r.it[+k.slice(1)]:r.a};
 const L=rows.filter(function(r){return!q||[r.a,r.fy,r.age.join(' '),f(r.m.open),f(r.m.add),f(r.m.intr),f(r.m.mi),f(r.m.close),pc(r.m.yl)].join(' ').toLowerCase().indexOf(q)>-1});
 L.sort(function(x,y){const a=key(x,UI.rk),b=key(y,UI.rk);return(a>b?1:a<b?-1:0)*UI.rd});
 if(!L.length)return'<div class="em">No years match your search.</div>';
 const th=function(k,t){return'<th aria-sort="'+(UI.rk===k?(UI.rd>0?'ascending':'descending'):'none')+'"><button data-rk="'+k+'">'+t+(UI.rk===k?(UI.rd>0?' ▲':' ▼'):'')+'</button></th>'};
 const cls=function(r){return(r.a===ri?'a':'')+(UI.sel===r.a?' sel':'')};
-const tot=L.reduce(function(t,r){t.add+=r.m.add;t.intr+=r.m.intr;idx.forEach(function(i){t.it[i]=(t.it[i]||0)+r.it[i]});return t},{add:0,intr:0,it:{}});
+const PO=S.policies.length>0,tot=L.reduce(function(t,r){t.add+=r.m.add;t.intr+=r.m.intr;t.pay+=r.pay;idx.forEach(function(i){t.it[i]=(t.it[i]||0)+r.it[i]});return t},{add:0,intr:0,pay:0,it:{}});
 return'<table class="rt rs"><tr>'+th('a','S.No')+th('year','Financial<br>year')+th('age','Age<br>(start)')+th('open','Opening<br>(₹ L)')+th('add',"Add'ns<br>(₹ L)")
-+idx.map(function(i){return th('v'+i,escn(A[i].name)+'<br>interest (₹ L)')}).join('')+th('int','Interest<br>earned (₹)')+th('mi','Monthly<br>income (₹)')+th('roi','Yield on<br>opening')+th('close','Closing<br>(₹ L)')+'</tr>\n'
++idx.map(function(i){return th('v'+i,escn(A[i].name)+'<br>interest (₹ L)')}).join('')+th('int','Interest<br>earned (₹)')+th('mi','Monthly<br>income (₹)')+th('roi','Yield on<br>opening')+(PO?th('pay','Policy<br>payouts (₹)')+th('ti','Total<br>income (₹)'):'')+th('close','Closing<br>(₹ L)')+'</tr>\n'
 +L.map(function(r){return'<tr data-r="'+r.a+'" class="'+cls(r)+'" tabindex="0" aria-selected="'+(UI.sel===r.a)+'"><td>'+r.a+'</td><td class="nw">'+r.fy+'</td><td class="nw">'+r.age.join(' / ')+'</td><td title="'+f(r.m.open)+'">'+lk(r.m.open)+'</td><td>'+lk(r.m.add)+'</td>'
-+idx.map(function(i){return matDone(A[i],r,2)?'<td>-</td>':'<td title="'+f(r.it[i])+'">'+lk(r.it[i])+'</td>'}).join('')+(allMat(idx,r,2)?'<td class="nw"><b>-</b></td><td class="nw"><b>-</b></td><td>-</td>':'<td class="nw"><b>'+f(r.m.intr)+'</b></td><td class="nw"><b>'+f(r.m.mi)+'</b></td><td>'+pc(r.m.yl)+'</td>')+'<td title="'+f(r.m.close)+'">'+lk(r.m.close)+'</td></tr>'}).join('')
-+'<tr class="itot"><td></td><td class="nw"><b>Total</b></td><td></td><td></td><td><b>'+lk(tot.add)+'</b></td>'+idx.map(function(i){return'<td><b>'+lk(tot.it[i])+'</b></td>'}).join('')+'<td class="nw"><b>'+f(tot.intr)+'</b></td><td class="nw"><b>'+f(tot.intr/12/L.length)+'</b><div class="mu">avg / month</div></td><td></td><td></td></tr></table>\n'
++idx.map(function(i){return matDone(A[i],r,2)?'<td>-</td>':'<td title="'+f(r.it[i])+'">'+lk(r.it[i])+'</td>'}).join('')+(allMat(idx,r,2)?'<td class="nw"><b>-</b></td><td class="nw"><b>-</b></td><td>-</td>':'<td class="nw"><b>'+f(r.m.intr)+'</b></td><td class="nw"><b>'+f(r.m.mi)+'</b></td><td>'+pc(r.m.yl)+'</td>')+(PO?'<td class="nw">'+(r.pay>0?f(r.pay):'—')+'</td><td class="nw"><b>'+f((allMat(idx,r,2)?0:r.m.intr)+r.pay)+'</b></td>':'')+'<td title="'+f(r.m.close)+'">'+lk(r.m.close)+'</td></tr>'}).join('')
++'<tr class="itot"><td></td><td class="nw"><b>Total</b></td><td></td><td></td><td><b>'+lk(tot.add)+'</b></td>'+idx.map(function(i){return'<td><b>'+lk(tot.it[i])+'</b></td>'}).join('')+'<td class="nw"><b>'+f(tot.intr)+'</b></td><td class="nw"><b>'+f(tot.intr/12/L.length)+'</b><div class="mu">avg / month</div></td><td></td>'+(PO?'<td class="nw"><b>'+f(tot.pay)+'</b></td><td class="nw"><b>'+f(tot.intr+tot.pay)+'</b></td>':'')+'<td></td></tr></table>\n'
 +'<div class="rc">'+L.map(function(r){return'<details class="yc '+cls(r)+'" data-r="'+r.a+'"><summary><b>'+r.fy+'</b> · Age '+r.age[0]+'<br><span class="mu">Interest</span> <b>'+f(r.m.intr)+'</b><div class="mu">Monthly income '+f(r.m.mi)+'</div></summary><div class="kv"><span>Opening balance</span><b>'+f(r.m.open)+'</b><span>Additions</span><b>'+f(r.m.add)+'</b>'
-+idx.map(function(i){return'<span>'+escn(A[i].name)+' interest</span><b>'+(matDone(A[i],r,2)?'-':f(r.it[i]))+'</b>'}).join('')+'<span>Interest earned</span><b>'+f(r.m.intr)+'</b><span>Monthly income</span><b>'+f(r.m.mi)+'</b><span>Yield on opening</span><b>'+pc(r.m.yl)+'</b><span>Closing balance</span><b>'+f(r.m.close)+'</b></div></details>'}).join('')+'</div>'};
++idx.map(function(i){return'<span>'+escn(A[i].name)+' interest</span><b>'+(matDone(A[i],r,2)?'-':f(r.it[i]))+'</b>'}).join('')+'<span>Interest earned</span><b>'+f(r.m.intr)+'</b><span>Monthly income</span><b>'+f(r.m.mi)+'</b><span>Yield on opening</span><b>'+pc(r.m.yl)+'</b>'+(PO?'<span>Policy payouts</span><b>'+(r.pay>0?f(r.pay):'—')+'</b><span>Total income</span><b>'+f((allMat(idx,r,2)?0:r.m.intr)+r.pay)+'</b>':'')+'<span>Closing balance</span><b>'+f(r.m.close)+'</b></div></details>'}).join('')+'</div>'};
 window.intTiles=function(){const SEL=repSel(),A=S.assets,idx=SEL.idx,md=intData(),D=md.D,rows=md.rows;if(!rows.length)return'';
 const cs=rows.map(function(r){return intCalc(r,idx)}),tot=cs.reduce(function(t,c){return t+c.intr},0),rr=D.rows[D.ri];
 const inc=idx.reduce(function(t,i){const mt=matOf(A[i],S);return t+rr.v[i]*(mt&&D.ri+1>=mt.row?0:A[i].ret)},0),last=D.rows[D.rows.length-1];
 const card=function(l,v,sub){return'<div class="rpk-c"><div class="rpk-l">'+l+'</div><div class="rpk-v">'+(SEL.none?'—':v)+'</div><div class="rpk-s">'+(SEL.none?'No asset class selected':sub)+'</div></div>'};
 return'<div class="rpk" role="group" aria-label="Interest summary">'+card('First-year interest ('+rows[0].fy+')',f(cs[0].intr),'Monthly income: '+f(cs[0].mi))
 +card('Monthly income at retirement ('+rr.year+')',f(inc/12),'Yearly: '+f(inc)+' · Age: '+rr.age.join(' / '))
-+card('Total interest till '+last.year,f(tot),'Avg monthly income: '+f(tot/12/rows.length))+'</div>'};
++card('Total interest till '+last.year,f(tot),'Avg monthly income: '+f(tot/12/rows.length))+(D.payT>0?card('Policy payouts till '+last.year,f(D.payT),'Not part of interest or balances'+(D.payRet>0?' · '+f(D.payRet/12)+' / month after retirement':'')):'')+'</div>'};
 window.intCSV=function(){const q=function(v){return'"'+String(v).replace(/"/g,'""')+'"'},A=S.assets,idx=repSel().idx,md=intData();
-const h=['S.No','Financial year','Age (start)','Opening','Additions'].concat(idx.map(function(i){return A[i].name+' interest'}),['Interest earned','Monthly income','Yield on opening %','Closing']).map(q).join(',');
-return[h].concat(md.rows.map(function(r){const m=intCalc(r,idx);return[r.a,q(r.fy),q(r.age.join(' / ')),Math.round(m.open),Math.round(m.add)].concat(idx.map(function(i){return Math.round(r.it[i])}),[Math.round(m.intr),Math.round(m.mi),m.yl==null?'':(m.yl*100).toFixed(2),Math.round(m.close)]).join(',')})).join('\n')};
+const h=['S.No','Financial year','Age (start)','Opening','Additions'].concat(idx.map(function(i){return A[i].name+' interest'}),['Interest earned','Monthly income','Yield on opening %'],S.policies.length?['Policy payouts','Total income']:[],['Closing']).map(q).join(',');
+return[h].concat(md.rows.map(function(r){const m=intCalc(r,idx);return[r.a,q(r.fy),q(r.age.join(' / ')),Math.round(m.open),Math.round(m.add)].concat(idx.map(function(i){return Math.round(r.it[i])}),[Math.round(m.intr),Math.round(m.mi),m.yl==null?'':(m.yl*100).toFixed(2)],S.policies.length?[Math.round(r.pay),Math.round(m.intr+r.pay)]:[],[Math.round(m.close)]).join(',')})).join('\n')};
 })();</script>
 <style>
 html body .rt.rs tr.itot td{border-top:2px solid var(--bd);background:color-mix(in srgb,var(--rpc) 8%,var(--card))}
@@ -3291,6 +3317,10 @@ function rfile(){try{if(window.fetch&&/^https?:/.test(location.protocol))return 
 window.FSREG={get:rget,set:rset,adopt:radopt,hash:function(u,pw){return sha256('finsight|'+u+'|'+pw)},H:H,dbOk:null,cloud:null};
 var ready=window.FSREG.ready=Promise.race([Promise.all([rpull(),rfile()]),new Promise(function(r){setTimeout(r,3000)})]);
 var root=document.documentElement,f=document.getElementById('lgf'),u=document.getElementById('lu'),p=document.getElementById('lp'),er=document.getElementById('le'),tg=document.getElementById('lt'),so=document.getElementById('so'),bad=0,until=0;
+/* "Remember me": remembers the email and keeps the sign-in session on this device (see the head script). The password itself is never stored. Sign out clears it. */
+function vrRemember(un,pw){var done=Promise.resolve();try{var c=document.getElementById('lsv'),on=!!(c&&c.checked);if(on){localStorage.setItem('vr-lastuser',un);localStorage.setItem('vr-rm','1');var o=sessionStorage.getItem('vr-sb');if(o)localStorage.setItem('vr-sb-remember',o);if(pw&&window.PasswordCredential&&navigator.credentials&&navigator.credentials.store)done=Promise.race([navigator.credentials.store(new PasswordCredential({id:un,password:pw,name:un})),new Promise(function(r){setTimeout(r,1500)})]).catch(function(){})}else{localStorage.removeItem('vr-lastuser');localStorage.removeItem('vr-rm');localStorage.removeItem('vr-sb-remember')}}catch(e){}return done}
+try{var svU=localStorage.getItem('vr-lastuser'),svC=document.getElementById('lsv');if(svC)svC.checked=!!svU;if(svU&&!u.value)u.value=svU;
+if(svU&&window.PasswordCredential&&navigator.credentials&&navigator.credentials.get)navigator.credentials.get({password:true,mediation:'silent'}).then(function(c){if(c&&c.password&&(!u.value||c.id===u.value)&&!p.value){if(!u.value)u.value=c.id;p.value=c.password}}).catch(function(){})}catch(e){}
 function lock(){if(window.VRSB){window.VRSB.signOut();return}try{sessionStorage.removeItem('fs-auth');sessionStorage.removeItem('fs-user')}catch(e){}if(window.__UK){location.reload();return}p.value='';u.value='';er.textContent='';root.classList.add('lk');setTimeout(function(){u.focus()},50)}
 function unlock(nu){try{sessionStorage.setItem('fs-auth','1');if(nu)sessionStorage.setItem('fs-user',nu);else sessionStorage.removeItem('fs-user')}catch(e){}if((nu||'')!==(window.__UK||'')){location.reload();return}p.value='';er.textContent='';root.classList.remove('lk');window.scrollTo(0,0)}
 (function(){var m=/^#invite=(.*)$/.exec(location.hash||'');if(!m)return;try{var j=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')))));
@@ -3299,15 +3329,14 @@ var ex=rget().users[un];if(ex&&ex.r==='admin')throw 0;var rec={n:String(j.n||un)
 try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}u.value=un;er.textContent='User “'+un+'” is ready on this device. Enter the password you were given.'}catch(e){er.textContent='This invite link is not valid.'}})();
 f.addEventListener('submit',function(ev){ev.preventDefault();var now=Date.now();
 if(now<until){er.textContent='Too many attempts. Try again in '+Math.ceil((until-now)/1000)+' seconds.';return}
-if(window.VR_PROD&&window.VRMFA&&window.VRMFA.active()){window.VRMFA.submit(er);return}
 if(!u.value||!p.value){er.textContent='Enter your username and password.';return}
 er.textContent='Checking…';
-if(window.VR_PROD){if(!window.VRSB){er.textContent='Not configured: add your Supabase settings to config.js.';return}window.VRSB.signIn(u.value.trim(),p.value).then(function(r){if(r&&r.mfa){bad=0;window.VRMFA.start(r);return}bad=0;er.textContent='';try{sessionStorage.setItem('fs-auth','1');sessionStorage.removeItem('fs-user')}catch(e){}location.reload()},function(x){bad++;p.value='';if(bad>=5){bad=0;until=Date.now()+30000;er.textContent='Too many attempts. Try again in 30 seconds.'}else er.textContent=(x&&(x.status===400||x.status===401))?'Invalid email or password.':'Could not sign in. Check your connection and settings.';p.focus()});return}
+if(window.VR_PROD){if(!window.VRSB){er.textContent='Not configured: add your Supabase settings to config.js.';return}var vu=u.value.trim(),vp=p.value;window.VRSB.signIn(vu,vp).then(function(){return vrRemember(vu,vp)}).then(function(){bad=0;er.textContent='';try{sessionStorage.setItem('fs-auth','1');sessionStorage.removeItem('fs-user')}catch(e){}location.reload()},function(x){bad++;p.value='';if(bad>=5){bad=0;until=Date.now()+30000;er.textContent='Too many attempts. Try again in 30 seconds.'}else er.textContent=(x&&(x.status===400||x.status===401))?'Invalid email or password.':'Could not sign in. Check your connection and settings.';p.focus()});return}
 Promise.race([ready,new Promise(function(r){setTimeout(r,1500)})]).then(function(){
 var R=rget(),un=u.value.trim().toLowerCase(),e=R.users[un],good=false,adm=false;
 if(e&&sha256('finsight|'+un+'|'+p.value)===e.h){good=true;adm=e.r==='admin'}
 if(!good&&R.users.sjain&&R.users.sjain.h===H&&sha256('finsight|'+u.value+'|'+p.value)===H){good=true;adm=true;e=R.users.sjain}
-if(good){if(e.s==='disabled'){p.value='';er.textContent='This account is disabled. Contact the admin.';return}bad=0;er.textContent='';unlock(adm?'':un)}
+if(good){if(e.s==='disabled'){p.value='';er.textContent='This account is disabled. Contact the admin.';return}vrRemember(u.value.trim());bad=0;er.textContent='';unlock(adm?'':un)}
 else{bad++;p.value='';if(bad>=5){bad=0;until=Date.now()+30000;er.textContent='Too many attempts. Try again in 30 seconds.'}else er.textContent='Invalid username or password.';p.focus()}})});
 tg.addEventListener('click',function(){var s=p.type==='password';p.type=s?'text':'password';tg.textContent=s?'Hide':'Show';tg.setAttribute('aria-label',s?'Hide password':'Show password')});
 so.addEventListener('click',lock);
@@ -3425,7 +3454,7 @@ dialog{border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:22px}
 .lc{border-radius:var(--r-card);box-shadow:var(--shadow-card)}
 </style>
 <script>/* BUILD INFO: bump BUILD_NO (and date) on every build */
-(function(){var VER=window.VR_VERSION||'2.1.0',txt='v'+VER;window.FS_BUILD=txt;
+(function(){var txt=window.VR_BUILD_TXT||'';window.FS_BUILD=txt;
 function set(){['bv','lgv'].forEach(function(id){var e=document.getElementById(id);if(e)e.textContent=txt})}
 set();document.addEventListener('DOMContentLoaded',set)})();</script>
 <style>/* retirement-year row: no automatic yellow highlight (the Retired tag stays) */
@@ -3653,7 +3682,7 @@ function lst(key,c){fitList(key+modeOf(c),c,rowsOf(c))}
 function subbar(before,items,cur,attr){var d=document.createElement('div');d.className='vsub';d.setAttribute('role','group');
 d.innerHTML=items.map(function(t,i){return'<button type="button" '+attr+'="'+i+'" aria-pressed="'+(i===cur)+'">'+t.replace(/&/g,'&amp;')+'</button>'}).join('');before.parentNode.insertBefore(d,before)}
 var SP=[['family','Family'],['general','General'],['columns','Columns'],['look','Look'],['font','Fonts'],['backup','Backup']];
-function settingsFit(){var all0=[].slice.call(M.querySelectorAll(':scope>.card')),cards=all0.filter(function(c){return c.id!=='rcset'});all0.forEach(function(c){if(c.id==='rcset')c.dataset.fp='columns'});
+function settingsFit(){var all0=[].slice.call(M.querySelectorAll(':scope>.card')),cards=all0.filter(function(c){return c.id!=='rcset'&&c.id!=='vr-snc'});all0.forEach(function(c){if(c.id==='rcset')c.dataset.fp='columns';else if(c.id==='vr-snc')c.dataset.fp='backup'});
 cards.forEach(function(c,ci){var all=c.dataset.fp;if(ci===0)c.dataset.fp='family';else if(ci===1)c.dataset.fp='general';else if(ci===2){c.dataset.fp='look font backup';var n=-1;
 [].forEach.call(c.children,function(e){if(e.tagName==='H2')return;if(e.classList.contains('sub2'))n++;
 if(e.id==='se'){e.dataset.fp='*';return}
@@ -4175,6 +4204,73 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
  #fh-pa .fh-lede,#fh-pa .fh-fine{font-size:11px;color:#333;line-height:1.45}
 }
 </style>
+<script id="vr-pol">
+/* Policy Payouts (Holdings screen): add, edit, delete insurance policies that pay money back on a schedule.
+   Engine lives in the CALC block (polSched, polApply...). Data: S.policies, saved with the plan (per client, synced like everything else). */
+(function(){
+const FQ=[['monthly','Monthly'],['quarterly','Quarterly'],['halfyearly','Half-yearly'],['yearly','Yearly']];
+const fmtD=t=>{const d=pDate(t);return d?d.d+' '+MSN[d.mo-1]+' '+d.y:'—'};
+const sorted=()=>S.policies.map((x,i)=>({x,i})).sort((a,b)=>a.x.start<b.x.start?-1:a.x.start>b.x.start?1:a.i-b.i);
+const fl=k=>(FQ.find(q=>q[0]===k)||['',k])[1];
+const isIc=d=>'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+function line(x){const T=polTotals(x),n=T.count;
+ return (x.amt>0?n+' payout'+(n===1?'':'s')+' of '+f(x.amt)+' ('+fl(x.freq).toLowerCase()+'), '+fmtD(x.start)+' to '+fmtD(T.pay?polSched(x).filter(e=>e.kind==='payout').pop().date:x.start):'')+(x.lump>0?(x.amt>0?', then a ':'A ')+'lump sum of '+f(x.lump)+' on '+fmtD(polSched(x).filter(e=>e.kind==='lump').map(e=>e.date)[0]):'')}
+window.polCard=function(){
+ const P=sorted(),tp=P.reduce((q,o)=>q+polTotals(o.x).pay,0),tl=P.reduce((q,o)=>q+polTotals(o.x).lump,0);
+ const bt=o=>`<button type="button" class="tbs" data-ps="${o.i}" aria-label="View payout schedule of ${escn(o.x.name)}" title="Payout schedule">Schedule</button> <button type="button" class="tbs" data-pe="${o.i}" aria-label="Edit ${escn(o.x.name)}" title="Edit">Edit</button> <button type="button" class="tbs d" data-px="${o.i}" aria-label="Delete ${escn(o.x.name)}" title="Delete">Delete</button>`;
+ const nm=o=>`<div class="nm"><div><b>${escn(o.x.name)}</b><div><span class="pill" style="--c:#7c3aed">${esc(fl(o.x.freq))}</span></div>${o.x.note?`<div class="mu tsx">${esc(o.x.note)}</div>`:''}</div></div>`;
+ const lump=x=>x.lump>0?f(x.lump)+'<br><span class="mu">on '+fmtD(polSched(x).filter(e=>e.kind==='lump')[0].date)+'</span>':'—';
+ const body=!P.length?`<div class="em">No policies yet. Click “Add policy” to enter a policy that pays you money back, for example ₹94,000 a year for 10 years and a lump sum at the end.</div>`:
+ `<div class="ht tw"><table aria-label="Policy payouts"><tr><th>Policy</th><th>Payout</th><th>Starts</th><th>Duration</th><th>Maturity lump sum</th><th>Total expected</th><th>Actions</th></tr>
+${P.map(o=>{const T=polTotals(o.x);return`<tr><td>${nm(o)}</td><td>${o.x.amt>0?f(o.x.amt)+'<br><span class="mu">'+esc(fl(o.x.freq)).toLowerCase()+'</span>':'—'}</td><td class="nw">${fmtD(o.x.start)}</td><td class="nw">${o.x.yrs} year${o.x.yrs===1?'':'s'}<br><span class="mu">${T.count} payout${T.count===1?'':'s'}</span></td><td>${lump(o.x)}</td><td><b>${f(T.pay+T.lump)}</b></td><td class="nw">${bt(o)}</td></tr>`}).join('')}
+<tr class="t"><td>Total (${P.length})</td><td></td><td></td><td></td><td>${f(tl)}</td><td>${f(tp+tl)}</td><td></td></tr></table></div>
+<div class="hc">${P.map(o=>{const T=polTotals(o.x);return`<div class="hcard" style="--c:#7c3aed"><div class="hh">${nm(o)}<div class="vv"><b>${f(T.pay+T.lump)}</b><div class="mu">Total expected</div></div></div><div class="kv"><span>Payout</span><b>${o.x.amt>0?f(o.x.amt)+' · '+esc(fl(o.x.freq)).toLowerCase():'—'}</b><span>Starts</span><b>${fmtD(o.x.start)}</b><span>Duration</span><b>${o.x.yrs} year${o.x.yrs===1?'':'s'} · ${T.count} payout${T.count===1?'':'s'}</b><span>Maturity lump sum</span><b>${o.x.lump>0?f(o.x.lump)+'<br><small class="mu">on '+fmtD(polSched(o.x).filter(e=>e.kind==='lump')[0].date)+'</small>':'—'}</b></div><div class="tb">${bt(o)}</div></div>`}).join('')}</div>`;
+ return`<section class="pol-sec" id="pol-sec" aria-label="Policy payouts" style="margin-top:28px"><div class="hp-head" id="pol-h"><div class="hp-ttl"><h2 style="margin:0;font-size:22px">Policy Payouts</h2><p>${P.length?P.length+' polic'+(P.length===1?'y':'ies')+' · '+f(tp)+' regular payouts'+(tl?' + '+f(tl)+' maturity':''):'Insurance money-back income'} · counted as income, never as investment value</p></div><button type="button" class="p hp-add" id="padd">${isIc('<path d="M12 5v14M5 12h14"/>')}<span>Add policy</span></button></div>
+<div class="card hp-card" id="pol">${body}${P.length?`<label class="pol-opt" style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid var(--bd);font-size:14px"><input type="checkbox" id="polfh" ${S.polFh===false?'':'checked'}> <span>Include these payouts as income in the Retirement Planner</span></label>`:''}</div></section>`};
+function hf(id,l,v,ex,help){return`<div class="hf1"><label for="${id}">${l}</label><input id="${id}" type="number" inputmode="decimal" value="${esc(v)}" ${ex||''}><small class="hh">${help||''}</small></div>`}
+function form(i){
+ if(i==null&&S.policies.length>=PMAX){toast('Maximum '+PMAX+' policies. Delete one to add another.');return}
+ const x=i==null?{name:'',amt:'',freq:'yearly',start:todayStr(),yrs:10,lump:'',note:''}:S.policies[i];
+ open(`<form id="pfm" novalidate><h2>${i==null?'Add':'Edit'} Policy</h2>${i!=null&&x.ca?'<div class="tsx">'+esc(stampTxt(x))+'</div>':''}
+<section class="hs"><h3>Policy Details</h3><div class="hg"><div class="hf1"><label for="pn">Policy name</label><input id="pn" type="text" maxlength="40" required value="${escn(x.name)}" placeholder="e.g. Tata AIG money-back"></div>
+<div class="hf1"><label for="pnt">Note (optional)</label><input id="pnt" type="text" maxlength="200" value="${escn(x.note||'')}" placeholder="Policy number, payout account…"></div></div></section>
+<section class="hs"><h3>Payout</h3><div class="hg">${hf('pa','Payout amount (₹ each time)',x.amt,'min=0 step=any','Amount received at every payout.')}
+<div class="hf1"><label for="pf">Frequency</label><select id="pf">${FQ.map(q=>`<option value="${q[0]}" ${x.freq===q[0]?'selected':''}>${q[1]}</option>`).join('')}</select></div>
+<div class="hf1"><label for="ps">First payout date</label><input id="ps" type="date" value="${esc(x.start)}" min="1990-01-01" max="2200-12-31"><small class="hh">Later payouts follow the frequency from this date.</small></div>
+${hf('py','Duration (years)',x.yrs,'min=1 max=60 step=1','How many years the regular payouts run.')}</div></section>
+<section class="hs"><h3>Maturity Lump Sum</h3><div class="hg">${hf('pl','Lump sum at the end (₹, optional)',x.lump,'min=0 step=any','Paid once, one period after the last regular payout (start date + duration). Enter 0 if none.')}</div></section>
+<div id="pp" class="pvbox" aria-live="polite"></div><div id="pe" class="er" role="alert"></div>
+<div class="tb"><button type="button" id="pcn">Cancel</button><button class="p">Save Policy</button></div></form>`);
+ dg.classList.add('hf');
+ const g=id=>document.getElementById(id),val=()=>({name:g('pn').value.replace(/\s+/g,' ').trim(),amt:+g('pa').value||0,freq:g('pf').value,start:g('ps').value,yrs:Math.round(+g('py').value),lump:+g('pl').value||0,note:g('pnt').value.trim()});
+ const err=v=>{if(!v.name)return['pn','Enter a policy name.'];if(!(v.amt>=0)||v.amt>1e10)return['pa','Payout amount must be between 0 and 1,00,00,00,000.'];
+  if(!pDate(v.start))return['ps','Enter a valid first payout date (year 1990 to 2200).'];if(!(v.yrs>=1&&v.yrs<=60))return['py','Duration must be a whole number from 1 to 60 years.'];
+  if(!(v.lump>=0)||v.lump>1e12)return['pl','Lump sum must be 0 or more.'];if(!(v.amt>0||v.lump>0))return['pa','Enter a payout amount or a maturity lump sum.'];return null};
+ const pv=()=>{const v=val(),e=err(v),b=g('pp');if(e){b.innerHTML='';return}b.innerHTML='<b>Schedule preview</b><br>'+esc(line(v))+'<br><span class="mu">Total expected: '+f(polTotals(v).pay+polTotals(v).lump)+'</span>'};
+ pv();g('pcn').onclick=()=>dg.close();g('pn').focus();
+ ['pn','pa','pf','ps','py','pl'].forEach(id=>{g(id).addEventListener('input',pv);g(id).addEventListener('change',pv)});
+ g('pfm').addEventListener('submit',ev=>{ev.preventDefault();const v=val(),e=err(v);if(e){g('pe').textContent=e[1];g(e[0]).focus();return}
+  const now=Date.now(),isNew=i==null,id=isNew?'p'+now.toString(36)+Math.random().toString(36).slice(2,6):S.policies[i].id;
+  const c=cleanPol([Object.assign({},isNew?{}:S.policies[i],v,{id,ca:isNew?now:S.policies[i].ca,ma:isNew?undefined:now})]);
+  if(!c.length){g('pe').textContent='These values could not be saved. Please check them.';return}
+  if(isNew)S.policies.push(c[0]);else S.policies[i]=c[0];save();dg.close();render();toast(isNew?'Policy added':'Policy updated')})}
+function sched(i){const x=S.policies[i];if(!x)return;const L=polSched(x),now=todayStr(),T=polTotals(x);
+ const fy=e=>{const a=Math.floor((e.ix-3)/12);return 'FY '+a+'-'+String(a+1).slice(2)};
+ open(`<div class="pol-sch"><h2>${escn(x.name)} · payout schedule</h2><p class="mu">${esc(line(x))}</p><div class="rsum" style="margin:10px 0"><div><span class="mu">Regular payouts</span><b>${f(T.pay)}</b></div><div><span class="mu">Maturity lump sum</span><b>${f(T.lump)}</b></div><div><span class="mu">Total expected</span><b>${f(T.pay+T.lump)}</b></div></div>
+<div class="tw" style="max-height:52vh;overflow:auto"><table class="rt" aria-label="Payout schedule"><tr><th>#</th><th>Date</th><th>Financial year</th><th>Type</th><th>Amount</th><th>Status</th></tr>${L.map(e=>`<tr><td>${e.n}</td><td class="nw">${fmtD(e.date)}</td><td class="nw">${fy(e)}</td><td>${e.kind==='lump'?'Maturity lump sum':'Payout'}</td><td class="nw"><b>${f(e.amt)}</b></td><td>${e.date<=now?'Paid':'Upcoming'}</td></tr>`).join('')}</table></div>
+<div class="tb"><button type="button" class="p" id="psc">Close</button></div></div>`);dg.classList.add('hf');document.getElementById('psc').onclick=()=>dg.close()}
+/* Retirement Planner: hand the payouts over as fixed-rupee income by calendar year (the planner starts next calendar year) */
+window.__vrExtraStreams=function(cy){if(S.polFh===false)return[];const out=[];S.policies.forEach((p,k)=>{const by={};let lo=1e9,hi=0;polSched(p).forEach(e=>{const y=Math.floor(e.ix/12);if(y<=cy)return;by[y]=(by[y]||0)+e.amt;lo=Math.min(lo,y);hi=Math.max(hi,y)});if(hi)out.push({k:100+k,name:'Policy: '+p.name,amount:0,g:0,byYear:by,fromY:lo,toY:hi})});return out};
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='polfh'){S.polFh=!!e.target.checked;save();toast(S.polFh?'Payouts included in the Retirement Planner':'Payouts left out of the Retirement Planner')}});
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#padd,[data-pe],[data-px],[data-ps]');if(!b)return;
+ if(b.id==='padd'){form(null);return}
+ if(b.dataset.pe!=null&&b.closest('#pol')){form(+b.dataset.pe);return}
+ if(b.dataset.ps!=null&&b.closest('#pol')){sched(+b.dataset.ps);return}
+ if(b.dataset.px!=null&&b.closest('#pol')){const k=+b.dataset.px,x=S.policies[k];if(!x)return;e.stopPropagation();
+  confirmBox(`Delete policy “${escn(x.name)}”? Its payouts will be removed from every report and forecast.`,()=>{const u=undoer();S.policies.splice(k,1);save();render();toast('Policy deleted',u)})}},true);
+})();
+</script>
+<style id="vr-pol-css">html body #pol .hcard .vv{flex:none;text-align:right}html body #pol .hcard .vv b{white-space:nowrap}html body #pol .hcard .hh{align-items:flex-start;gap:10px}html body #pol .hcard .tb .tbs{white-space:nowrap;padding-left:6px;padding-right:6px;min-width:0;flex:1 1 0}@media (pointer:coarse){html body dialog.hf #pfm input:not([type=checkbox]):not([type=radio]),html body dialog.hf #pfm select{height:44px;min-height:44px}html body #pol .tbs,html body #pol-sec #padd,html body #pol-sec .pol-opt{min-height:44px}html body #pol .tbs{min-width:44px}html body #pol .pol-opt input{width:22px;height:22px}}@media (max-width:720px){html body dialog.hf #pfm input:not([type=checkbox]):not([type=radio]),html body dialog.hf #pfm select{height:44px;min-height:44px}html body #pfm .tb button{min-height:44px}}@media (max-width:420px){html body #m :is(#dsh,#d1,#d2,.dz-card,.dz-hero){min-width:0;max-width:100%}html body #m .mtabs{max-width:100%;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}html body #m .dz-dt{white-space:normal}}html body #pol .ht td .mu,html body #pol .hcard .mu{font-size:12px}html body #pol .ht table th{font-weight:700}html body .pol-sch h2{margin:0 0 6px;font-size:20px}html body .pol-sch .rsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}html body .pol-sch .rsum>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--bd);border-radius:10px}@media (max-width:720px){html body #pol .tb{display:flex;flex-wrap:wrap;gap:8px}html body #pol .tb .tbs{min-height:44px;flex:1 1 30%}html body #pol-sec .hp-head{align-items:flex-start}html body .pol-sch .tw{max-height:46vh!important}}</style>
 <script id="fh-engine">
 /* Retirement planner · calculation engine
    Pure functions only: no DOM, no storage, no network. Every input is read from the
@@ -4491,8 +4587,13 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
   }
   function incomeIn(streams, year, cy) {
     const label = cy + year; let t = 0;
-    for (const s of streams) if (label >= s.fromY && label <= s.toY) t += s.amount * (1 + s.g) ** (year - 1 + FIRST_YEAR_INFLATION);
+    for (const s of streams) if (label >= s.fromY && label <= s.toY) t += s.byYear ? (s.byYear[label] || 0) : s.amount * (1 + s.g) ** (year - 1 + FIRST_YEAR_INFLATION);
     return t;
+  }
+  /* Fixed-rupee income registered by the host page (insurance policy payouts): { k, name, byYear: {calendarYear: rupees}, fromY, toY }.
+     Not inflated (a policy pays the same rupees). Absent unless the page registers root.__vrExtraStreams, so the engine stays pure on its own. */
+  function extraStreams(cy) {
+    try { const x = typeof root.__vrExtraStreams === "function" ? root.__vrExtraStreams(cy) : []; return Array.isArray(x) ? x : []; } catch (e) { return []; }
   }
   const incomeLabel = (s, all) => s.name ? s.name + " income" : all.length > 1 ? "Income source " + s.k : "Other income";
   function incomeEvents(streams, year, years, cy) {
@@ -4553,7 +4654,7 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
      Row y (1..years): spending parts, other income, reserve interest, the pool (P) and the savings fund (S). */
   function simulate(inp, noEarn) {
     const years = num(inp, "until") - num(inp, "age"), rate = num(inp, "roi") / 100, reserve = num(inp, "buffer"), kids = childCount(inp);
-    const streams = incomeStreams(inp), cy = nowYear();
+    const cy = nowYear(), streams = incomeStreams(inp).concat(extraStreams(cy));
     const R = noEarn ? 0 : earningYears(inp), E = R ? num(inp, "preEarn") : 0, g = R ? num(inp, "preRoi") / 100 : 0, age = num(inp, "age");
     let P = num(inp, "corpus") - reserve, S = 0;
     const today = []; let todayTotal = 0;
@@ -4676,7 +4777,7 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
   function horizonReport(inp, opts) {
     const currentYear = (opts && opts.currentYear) || new Date().getFullYear();
     const age = num(inp, "age"), years = num(inp, "until") - age, kids = childCount(inp), cutP = num(inp, "reducePercent");
-    const streams = incomeStreams(inp), sim = simulate(inp), R = sim.R, retireAge = R > 0 ? num(inp, "retire") : null;
+    const streams = incomeStreams(inp).concat(extraStreams(nowYear())), sim = simulate(inp), R = sim.R, retireAge = R > 0 ? num(inp, "retire") : null;
     let pool = sim.startPool, seenNeg = false;
     const status = bal => { if (bal >= 0) return "Funded"; const s = seenNeg ? "Shortfall" : "Runs out"; seenNeg = true; return s; };
     const rows = [], zero = () => new Array(kids + 1).fill(0);
@@ -4957,8 +5058,8 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
     const def = f.id === "roi" ? `<div class="hf1 fh-defrow"><label class="fh-def" for="fh-defalloc"><input type="checkbox" id="fh-defalloc"${FH.defAlloc ? " checked" : ""} aria-describedby="fh-defalloc-h"><span>Auto-allocate Corpus</span></label>` +
       `<small id="fh-defalloc-h">${esc(allocHint())}</small></div>` : "";
     return `<div class="hf1"${f.child && f.panel !== "college" && f.panel !== "weddings" ? ` data-fh-cond="${f.child}"` : ""}>` +
-      `<label for="${id}">${label}</label>${ctl}${amt}${hint ? `<small class="hh">${esc(f.help)}</small>` : ""}` +
-      `<small class="er fh-err" id="${id}-e" role="alert"></small></div>${def}`;
+      `${f.id === "corpus" ? hpHead(id, label) : `<label for="${id}">${label}</label>`}${ctl}${amt}${hint ? `<small class="hh">${esc(f.help)}</small>` : ""}` +
+      `<small class="er fh-err" id="${id}-e" role="alert"></small>${f.id === "corpus" ? '<div id="fh-hold" class="fh-hold" hidden></div>' : ""}</div>${def}`;
   }
   /* Planning period strip (build 78): Today -> Retirement -> Plan ends, with the earning amounts. Used on Plan Input, Summary and Reports. */
   function ptHTML(v, slim) {
@@ -5053,7 +5154,7 @@ html body #dsh .fh-neg .dz-mini,html body #dsh .fh-neg .dz-dv,html body #dsh .fh
 <div id="fh-wizard">
 <div class="fh-top"><span id="fh-count">Step 1 of 6</span><span>* required</span></div>
 <div class="wzt fh-wzt" id="fh-nav" role="tablist" aria-label="Planning steps"></div>
-<p class="fh-note" id="fh-note"><b>Returns and inflation rates are assumptions</b> you can edit, not predictions or guarantees. This pop-up uses its own simple model and never reads or changes your holdings.</p>
+<p class="fh-note" id="fh-note"><b>Returns and inflation rates are assumptions</b> you can edit, not predictions or guarantees. This pop-up uses its own simple model. It reads your Goal Planner holdings only when you tick them under Current Corpus, and never changes them.</p>
 ${panel("family", `<div class="fh-fam"><div class="hs">` + grid(f => f.panel === "family" && f.child === null).replace('class="hg"', 'class="hg fh-g2"') +
   [1, 2].map(c => `<div class="fh-crow" data-fh-cond="${c}"><span class="fh-cn">Child ${c}</span>${FHE.FIELDS.filter(f => f.panel === "family" && f.child === c).map(fieldHTML).join("")}</div>`).join("") + `<p class="hh fh-stg-note" data-fh-cond-any>Stage: pick School and enter the Class (1–12), or College 1–4 for the year of a 4-year course. College years fill &ldquo;years of college fees left&rdquo; on the College step.</p></div></div>`)}
 ${panel("planning", `<div class="fh-plan"><div class="fh-ph"><h3>Retirement Timeline</h3><span class="fh-badge" id="fh-horizon"></span></div><div id="fh-pt" class="fh-ptw"></div>` +
@@ -6558,6 +6659,7 @@ ${acc("alloc", "Fund allocation", "today and by age", `<div id="dsh" class="fh-d
     if (typeof save === "function") save();
     FH.v = null; FH.step = "family"; FH.house = "expenses"; FH.plan = "ready"; FH.incEdit = 0; FH.incNew = 0; FH.incUndo = null; FH.sel = { college: 1, weddings: 1 }; FH.sig = ""; FH.mode = "wizard"; FH.doneAt = 0;
     memo = { key: "", r: null }; simAge = null; RPT.tab = null;
+    hpReset();
     syncFromState();
     if (toPlan) RP.tab = "status";
     if (typeof render === "function") render();
@@ -6588,7 +6690,7 @@ ${acc("alloc", "Fund allocation", "today and by age", `<div id="dsh" class="fh-d
     const src = P.profiles[id]; let nm = fhpName(src.name + " (copy)"), i = 2;
     while (fhpTaken(nm, P)) nm = fhpName(src.name).slice(0, 24) + " (copy " + i++ + ")";
     const nid = fhpUniqueId(nm, P);
-    P.profiles[nid] = { name: nm, v: src.v ? Object.assign({}, src.v) : null, t: src.t || 0, rep: src.rep ? 1 : 0, created: Date.now() };
+    P.profiles[nid] = { name: nm, v: src.v ? Object.assign({}, src.v) : null, t: src.t || 0, rep: src.rep ? 1 : 0, hold: src.hold ? JSON.parse(JSON.stringify(src.hold)) : undefined, created: Date.now() };
     if (typeof save === "function") save(); if (typeof render === "function") render();
     return nm;
   }
@@ -6643,6 +6745,102 @@ ${acc("alloc", "Fund allocation", "today and by age", `<div id="dsh" class="fh-d
     el.innerHTML = fhpBarHTML(true);
   };
   /* the same control: in the top bar (id fhp-sel) and, on phones where the top bar has no room, at the top of the page */
+  /* ---- Current Corpus from Goal Planner holdings: "View holdings" link on the Current Corpus field.
+     The holdings of the Goal Planner client with the same name are listed with check boxes; the ticked ones add up to Current Corpus.
+     Read-only for the Goal Planner. The ticked ids are kept on the Retirement client (S.fhp.profiles[id].hold), inside the existing saved state. ---- */
+  const HP = { open: false };
+  const hpM = x => { const M0 = typeof cr === "function" ? cr : FHE.currency; return String(M0(x)).replace("\u20b9 ", "\u20b9"); };
+  function hpHead(id, label) {
+    return `<div class="fh-hrow"><label for="${id}">${label}</label><button type="button" class="fh-hlink" data-fh-hold="toggle" aria-expanded="false" aria-controls="fh-hold">View holdings</button></div>`;
+  }
+  function hpState() {
+    const P = fhpEnsure(); if (!P) return null;
+    const pr = P.profiles[P.active], L = typeof window.gppHoldingList === "function" ? window.gppHoldingList() : [];
+    const h = pr.hold && typeof pr.hold === "object" ? pr.hold : {}, nm = String(pr.name || "").trim().toLowerCase();
+    const cl = (h.gp ? L.find(c => c.id === h.gp) : null) || L.find(c => String(c.name).trim().toLowerCase() === nm) || null;
+    const ids = cl && h.gp === cl.id && Array.isArray(h.ids) ? h.ids.map(String) : [];
+    return { pr, L, cl, ids };
+  }
+  const hpTotal = (cl, ids) => cl.items.reduce((t, i) => t + (ids.includes(i.id) ? i.val : 0), 0);
+  function hpSave(st, ids) { st.pr.hold = { gp: st.cl.id, ids: ids.slice() }; if (typeof save === "function") save(); }
+  function hpApply(total) {                       // same steps as typing a new value into the Current Corpus box
+    setField("corpus", Math.round(total));
+    const a = $("corpus-amt"); if (a) a.textContent = amtText(FH.v.corpus);
+    if (FH.mode === "done") FH.mode = "wizard";
+    updateLive();
+    if (FH.defAlloc) applyDefaultAllocation();
+  }
+  function hpRender() {
+    const box = document.getElementById("fh-hold"), btn = document.querySelector('[data-fh-hold="toggle"]');
+    if (btn) { btn.setAttribute("aria-expanded", String(HP.open)); btn.textContent = HP.open ? "Hide holdings" : "View holdings"; }
+    if (!box) return;
+    box.hidden = !HP.open; if (!HP.open) return;
+    const st = hpState(); if (!st) { box.innerHTML = ""; return; }
+    const pick = st.L.length > 1 || (st.L.length && !st.cl) ? `<label class="fh-hpk">Goal Planner client <select id="fh-hold-pick">${st.cl ? "" : '<option value="">Choose a client</option>'}${st.L.map(c => `<option value="${esc(c.id)}"${st.cl && c.id === st.cl.id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : "";
+    let body;
+    if (!st.L.length) body = `<p class="fh-hmsg">No Goal Planner clients were found.</p>`;
+    else if (!st.cl) body = `<p class="fh-hmsg">No Goal Planner client is named \u201c${esc(st.pr.name)}\u201d. Choose the client above.</p>`;
+    else if (!st.cl.items.length) body = `<p class="fh-hmsg">${esc(st.cl.name)} has no holdings in the Goal Planner yet.</p>`;
+    else {
+      const on = new Set(st.ids), all = st.cl.items.every(i => on.has(i.id)), tot = hpTotal(st.cl, st.ids), cur = Number(FH.v.corpus), n = st.cl.items.filter(i => on.has(i.id)).length;
+      const rows = st.cl.items.map(i => `<tr><td><input type="checkbox" class="fh-hold-cb" data-hid="${esc(i.id)}" aria-label="Include ${esc(i.name)}"${on.has(i.id) ? " checked" : ""}></td><td>${esc(i.name)}</td><td>${esc(i.cat)}</td><td class="fh-n" title="\u20b9 ${Math.round(i.val).toLocaleString("en-IN")}">${hpM(i.val)}</td></tr>`).join("");
+      const differs = n > 0 && Math.round(cur) !== Math.round(tot);
+      body = `<div class="fh-htw"><table class="fh-ht"><thead><tr><th><input type="checkbox" id="fh-hold-all" aria-label="Select all holdings"${all ? " checked" : ""}></th><th>Holding</th><th>Category</th><th class="fh-n">Current value</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+        `<div class="fh-hf"><span>${n} of ${st.cl.items.length} selected \u00b7 <b>${hpM(tot)}</b></span>${differs ? `<button type="button" class="fh-happly" data-fh-hold="apply">Use ${hpM(tot)} as Current Corpus</button>` : n ? `<span>Current Corpus matches</span>` : ""}</div>` +
+        `<small class="hh">Today\u2019s values from the Goal Planner. Ticking a holding sets Current Corpus to the selected total; you can still type over the box. Nothing in the Goal Planner is changed.</small>`;
+    }
+    box.innerHTML = pick + body;
+  }
+  function hpReset() { HP.open = false; hpRender(); }
+  document.addEventListener("click", e => {
+    const b = e.target.closest && e.target.closest("[data-fh-hold]"); if (!b) return;
+    if (b.dataset.fhHold === "toggle") { HP.open = !HP.open; hpRender(); }
+    else if (b.dataset.fhHold === "apply") { const st = hpState(); if (st && st.cl) hpApply(hpTotal(st.cl, st.ids)); hpRender(); }
+  });
+  document.addEventListener("change", e => {
+    const t = e.target; if (!t) return;
+    const cb = !!(t.classList && t.classList.contains("fh-hold-cb")), all = t.id === "fh-hold-all", pick = t.id === "fh-hold-pick";
+    if (!cb && !all && !pick) return;
+    const st = hpState(); if (!st) return;
+    const box = document.getElementById("fh-hold"), hid = cb ? t.dataset.hid : null;
+    if (pick) {
+      const c = st.L.find(x => x.id === t.value);
+      if (c) { st.pr.hold = { gp: c.id, ids: [] }; if (typeof save === "function") save(); }
+      hpRender(); const p = document.getElementById("fh-hold-pick"); if (p) p.focus(); return;
+    }
+    if (!st.cl || !box) return;
+    const ids = all ? (t.checked ? st.cl.items.map(i => i.id) : []) : Array.from(box.querySelectorAll(".fh-hold-cb:checked")).map(x => x.dataset.hid);
+    hpSave(st, ids); hpApply(hpTotal(st.cl, ids)); hpRender();
+    const again = all ? document.getElementById("fh-hold-all") : Array.from(box.querySelectorAll(".fh-hold-cb")).find(x => x.dataset.hid === hid);
+    if (again) again.focus();
+  });
+  document.addEventListener("input", e => { if (HP.open && e.target && e.target.id === "fh-corpus") hpRender(); });   // typing over the box refreshes the "matches" line
+  (function () {
+    if (document.getElementById("fh-hold-css")) return;
+    const s = document.createElement("style"); s.id = "fh-hold-css";
+    s.textContent = `.fh-hrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.fh-hlink{background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--ac,#0f766e);text-decoration:underline;cursor:pointer;width:auto}
+.fh-hold{margin-top:8px;border:1px solid color-mix(in srgb,currentColor 22%,transparent);border-radius:8px;padding:12px}
+.fh-hold[hidden]{display:none}
+.lgsv{display:flex;align-items:center;gap:8px;font-size:13px;margin:2px 0 8px;cursor:pointer}
+.lgsv input{width:16px;min-width:16px;height:16px;margin:0;padding:0}
+.fhp-g .fhp-sv{grid-column:1/-1}
+.hf1:has(>.fh-hold:not([hidden])){grid-column:1/-1}
+.fh-hpk{display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:8px}
+.fh-hpk select{width:auto;max-width:100%}
+.fh-htw{max-height:240px;overflow:auto}
+.fh-ht{width:100%;min-width:0!important;border-collapse:collapse;font-size:13px}
+.fh-ht td,.fh-ht th{white-space:normal}
+.fh-ht th,.fh-ht td{padding:6px 6px;text-align:left;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent)}
+.fh-ht .fh-n{text-align:right;white-space:nowrap!important;width:auto;min-width:0}
+.fh-ht th:first-child,.fh-ht td:first-child{width:28px;min-width:0;padding-left:4px;padding-right:4px}
+.fh-ht input[type=checkbox]{width:16px;min-width:16px;height:16px;padding:0;margin:0}
+.fh-hf{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;font-size:13px;flex-wrap:wrap}
+.fh-happly{width:auto;padding:4px 10px;font-size:12px;cursor:pointer}
+.fh-hmsg{margin:0;font-size:13px}`;
+    document.head.appendChild(s);
+  })();
+
   function fhpBarHTML(top) {
     return `<label class="fhp-l" for="${top ? "fhp-sel" : "fhp-sel-m"}">Client</label><select ${top ? 'id="fhp-sel"' : 'id="fhp-sel-m"'} class="fhp-sel" aria-label="Switch client">${fhpList().map(p => `<option value="${esc(p.id)}"${p.active ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select><button type="button" class="fhp-add" data-fhp="add">+ Add Person</button>`;
   }
@@ -6801,7 +6999,7 @@ window.gppSync=function(){const P=S&&S.gpp;if(P&&P.profiles&&P.profiles[P.active
 const list=()=>{const P=ensure();return P?Object.keys(P.profiles).map(id=>Object.assign({id,active:id===P.active},P.profiles[id])):[]};
 const taken=(n,P,ex)=>Object.keys(P.profiles).some(id=>id!==ex&&P.profiles[id].name.toLowerCase()===n.toLowerCase());
 const uid=(n,P)=>{const b=slug(n);let id=b,i=2;while(id in Object.prototype||Object.prototype.hasOwnProperty.call(P.profiles,id))id=b.slice(0,20)+'-'+i++;return id};
-const fresh=n=>{const d=DEF();return{members:[MB(1,n,'Self',d.members[0].age)],start:d.start,end:d.end,ret:d.ret,retP:d.retP,hor:d.hor,goal:d.goal,link:false,grat:{basic:0,svc:0,rem:0,cap:0},assets:[]}};
+const fresh=n=>{const d=DEF();return{members:[MB(1,n,'Self',d.members[0].age)],start:d.start,end:d.end,ret:d.ret,retP:d.retP,hor:d.hor,goal:d.goal,link:false,grat:{basic:0,svc:0,rem:0,cap:0},policies:[],assets:[]}};
 
 function sw(id,tab){
   const P=ensure();if(!P||!Object.prototype.hasOwnProperty.call(P.profiles,id))return false;
@@ -6825,11 +7023,16 @@ window.gppHeroInner=function(){const P=ensure();if(!P)return'';const p=P.profile
   const ini=nm.split(/\s+/).filter(Boolean).slice(0,2).map(w=>Array.from(w)[0].toUpperCase()).join('');
   return'<div class="dz-who"><span class="fhp-av sm" aria-hidden="true">'+esc(ini)+'</span><div class="fhp-ht"><span class="fhp-eb">Goal plan prepared for</span><div class="dz-nr"><h2 class="fhp-nm sm">'+esc(nm)+'</h2>'+(bits.length?'<span class="fhp-sub">'+bits.join(' \u00b7 ')+'</span>':'')+'</div></div></div>'};
 window.gppMBar=function(){return typeof S!=='undefined'&&ensure()?'<div class="fhp fhp-m">'+window.gppBarHTML(false)+'</div>':''};
+window.gppHoldingList=function(){/* read-only: every Goal Planner client with today's value of each holding (the same numbers as Current Corpus on the Goal Planner summary) */
+  const P=ensure();if(!P)return[];window.gppSync();
+  return Object.keys(P.profiles).map(function(id){const p=P.profiles[id];let items=[];
+    try{const d=JSON.parse(JSON.stringify(p.d)),D=calc(d);items=(d.assets||[]).map(function(x,i){return{id:String(x.id),name:String(x.name||'Holding'),cat:String(x.cat||''),val:Math.round(+D.rows[0].v[i]||0),ca:String(x.ca||''),ma:String(x.ma||'')}})}catch(e){items=[]}
+    return{id:id,name:p.name,active:id===P.active,items:items}})};
 
 function metrics(p){
   if(!p.d.assets.length)return null;
   const keep=snap(S);
-  try{Object.assign(S,JSON.parse(JSON.stringify(p.d)));const c=ctx();return{today:c.r0.tot,atRet:c.rr.tot,goal:c.G,yr:c.yr,tm:c.tm,ret:S.ret}}
+  try{Object.assign(S,JSON.parse(JSON.stringify(p.d)));const c=ctx();let sv=0,fy='';/* savings per year = yearly + monthly additions in the first financial year, same rule as Reports > Yearly Savings */let sn=0,s1=0,f1='',f2='';try{const D=calc(S),lab=i=>'FY '+(S.start+i-1)+'-'+String(S.start+i).slice(2);let tot=0;for(let i=1;i<D.rows.length;i++){const v=D.rows[i].add||0;if(v>0){tot+=v;sn++;if(sn===1){s1=Math.round(v);f1=lab(i)}f2=lab(i)}}sv=sn?Math.round(tot/sn):0;fy=f1&&f1+' to '+f2}catch(e){sv=0}return{today:c.r0.tot,atRet:c.rr.tot,goal:c.G,yr:c.yr,tm:c.tm,ret:S.ret,sav:sv,fy:fy,sn:sn,s1:s1}}
   catch(e){return null}
   finally{Object.assign(S,keep)}}
 window.gppClients=function(){
@@ -6839,7 +7042,7 @@ window.gppClients=function(){
     let chip='<span class="fhp-chip">No holdings</span>',body='<p class="fhp-nil">No holdings yet. Switch to the plan and add the first holding.</p>';
     if(m){const ok=m.atRet>=m.goal;chip='<span class="fhp-chip '+(ok?'fhp-ok':'fhp-bad')+'">'+(ok?'On track':'Behind goal')+'</span>';
       const st=(l,v,c)=>'<div><small>'+l+'</small><b class="'+(c||'')+'">'+v+'</b></div>';
-      body='<div class="fhp-g">'+st('Holdings',hold+' \u00b7 '+p.d.members.length+' member'+(p.d.members.length===1?'':'s'))+st('Worth today',M(m.today))+st('At retirement (age '+m.ret+')',M(m.atRet))+st('Goal',M(m.goal))+st(m.atRet>=m.goal?'Ahead by':'Short by',M(Math.abs(m.atRet-m.goal)),m.atRet>=m.goal?'fhp-pos':'fhp-neg')+st('Goal reached in',m.tm==null?'Not within plan':(Math.floor(m.tm/12)?Math.floor(m.tm/12)+' yr ':'')+(m.tm%12)+' m')+'</div>'}
+      body='<div class="fhp-g">'+st('Holdings',hold+' \u00b7 '+p.d.members.length+' member'+(p.d.members.length===1?'':'s'))+st('Worth today',M(m.today))+st('At retirement (age '+m.ret+')',M(m.atRet))+st('Goal',M(m.goal))+st(m.atRet>=m.goal?'Ahead by':'Short by',M(Math.abs(m.atRet-m.goal)),m.atRet>=m.goal?'fhp-pos':'fhp-neg')+st('Goal reached in',m.tm==null?'Not within plan':(Math.floor(m.tm/12)?Math.floor(m.tm/12)+' yr ':'')+(m.tm%12)+' m')+'<div class="fhp-sv" title="'+(m.fy?'Average of the '+m.sn+' saving years ('+m.fy+'). First year '+M(m.s1)+'. Year-by-year list: Reports > Yearly Savings.':'')+'"><small>Savings per year'+(m.sn?' (average of '+m.sn+' saving year'+(m.sn===1?'':'s')+')':'')+'</small><b>'+(m.sav>0?M(m.sav):'\u2014')+'</b></div></div>'}
     return'<article class="fhp-card'+(p.active?' fhp-cur':'')+'" aria-label="'+esc(p.name)+'"><header><h3>'+esc(p.name)+'</h3>'+(p.active?'<span class="fhp-chip fhp-act">Active</span>':'')+chip+'</header>'+body+'<div class="fhp-acts"><button type="button" class="p" data-gpp="switch:'+esc(p.id)+'">Switch to Plan</button><button type="button" data-gpp="dup:'+esc(p.id)+'">Duplicate</button><button type="button" data-gpp="ren:'+esc(p.id)+'">Rename</button><button type="button" class="d" data-gpp="del:'+esc(p.id)+'"'+(only?' disabled title="Keep at least one person"':'')+'>Delete</button></div></article>'}).join('');
   return'<div class="rph"><div><h1>Clients</h1><div class="rpf">Every saved Goal Planner portfolio. Switch to a plan to see its holdings, summary and reports.</div></div><div class="rpr">'+window.rvTog()+'</div></div><div class="fhp-grid">'+cards+'<button type="button" class="fhp-new" data-gpp="add"><span aria-hidden="true">+</span>Add Person<small>Starts an empty Goal Planner portfolio</small></button></div>'};
 
@@ -7833,12 +8036,19 @@ paint()})();</script>
 <style>html.vr-client [data-settab="Users"]{display:none!important}
 .vr-umf{display:grid;gap:10px;margin:14px 0;max-width:440px}.vr-umf label{display:grid;gap:4px;font-size:.92em}
 .vr-umf input,.vr-ut td.a input{padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--tx);font:inherit}
-.vr-ut td.a input{min-width:210px;margin-right:6px}.vr-ok{color:var(--ok);margin:10px 0 0}</style>
+.vr-ut td.a input{min-width:210px;margin-right:6px}.vr-ok{color:var(--ok);margin:10px 0 0}
+.vr-ut td.a{white-space:nowrap}
+@media (max-width:640px){.vr-ut{min-width:0!important;display:block}.vr-ut thead{display:none}.vr-ut tbody{display:block}
+.vr-ut tr{display:block;padding:10px 12px;border-bottom:1px solid var(--bd)}.vr-ut tr:last-child{border-bottom:0}
+.vr-ut td{display:block;padding:2px 0!important;border:0!important;text-align:left!important;overflow-wrap:anywhere}
+.vr-ut td:nth-child(1){font-weight:600}.vr-ut td:nth-child(3)::before{content:"Created: ";color:var(--mu)}.vr-ut td:nth-child(4)::before{content:"Last sign-in: ";color:var(--mu)}
+.vr-ut td.a{white-space:normal;margin-top:6px}.vr-ut td.a button{margin:2px 6px 2px 0}
+.vr-ut tr.vr-rr{padding:0 12px 12px}.vr-ut tr.vr-rr td{padding:0!important}.vr-rs{max-width:100%}}.vr-rr td{padding:10px 12px!important;background:color-mix(in srgb,var(--card) 92%,var(--bd))}.vr-rs{display:grid;gap:8px;max-width:520px}.vr-rs label{display:grid;gap:4px;font-size:.92em}.vr-rs input{padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--tx);font:inherit;width:100%;box-sizing:border-box}.vr-rs .tb{margin:0;position:static;justify-content:flex-start;padding:0;background:none;border:0;box-shadow:none;backdrop-filter:none}</style>
 <script>(function(){
 var st={users:null,err:'',msg:'',loading:false,show:false,rid:null,busy:false,t:0};
 function h(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function dt(s){if(!s)return '\u2014';var x=new Date(s);return isNaN(x)?'\u2014':x.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
-function gen(){var a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789',n=18,b=new Uint32Array(n),o='';crypto.getRandomValues(b);for(var i=0;i<n;i++)o+=a[b[i]%a.length];return o}
+function gen(){var a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789',n=10,b=new Uint32Array(n),o='';crypto.getRandomValues(b);for(var i=0;i<n;i++)o+=a[b[i]%a.length];return o}
 function errMsg(e){var c=e&&e.status;if(c===404)return 'The user-management function is not deployed yet. See DEPLOY.md, step "Add client logins".';if(c===401)return 'Your sign-in was not accepted. Sign out and sign in again.';if(c===403)return (e.message||'Only advisers can manage users.');return (e&&e.message)||'Something went wrong. Check your connection and try again.'}
 function val(id){var x=document.getElementById(id);return x?x.value:''}
 function body(){
@@ -7847,14 +8057,14 @@ function body(){
  if(V===false)return '<h2>Users</h2><p class="mu">Only advisers can manage users.</p>';
  if(V===null)return '<h2>Users</h2><p class="er" role="alert">Could not check adviser access. Run the latest supabase/schema.sql and mark your login as adviser (see DEPLOY.md), then reload.</p>';
  var head='<div class="hd2"><div><h2 style="margin:0">Client logins</h2><p class="mu" style="margin:2px 0 0">Create a sign-in for each client. Every client gets their own private workspace and cannot see yours or another client\u2019s.</p></div><div class="tb"><button type="button" data-um="refresh">Refresh</button><button type="button" class="p" data-um="add">+ Add client</button></div></div>';
- var form=st.show?'<div class="vr-umf"><label>Client email<input id="vr-um-em" type="email" autocomplete="off" placeholder="client@example.com"></label><label>Temporary password (8+ characters)<input id="vr-um-pw" type="text" autocomplete="off" spellcheck="false"></label><div class="tb"><button type="button" data-um="gen">Generate</button><button type="button" data-um="copy">Copy</button><button type="button" class="p" data-um="create">Create client</button><button type="button" data-um="cancel">Cancel</button></div><p class="mu" style="margin:0">Share the password with the client through a secure channel. Clients cannot change it in the app; you can reset it here.</p></div>':'';
+ var form=st.show?'<div class="vr-umf"><label>Client email<input id="vr-um-em" type="email" autocomplete="off" placeholder="client@example.com"></label><label>Temporary password (8 to 10 characters)<input id="vr-um-pw" type="text" maxlength="10" autocomplete="off" spellcheck="false"></label><div class="tb"><button type="button" data-um="gen">Generate</button><button type="button" data-um="copy">Copy</button><button type="button" class="p" data-um="create">Create client</button><button type="button" data-um="cancel">Cancel</button></div><p class="mu" style="margin:0">Share the password with the client through a secure channel. Clients can change it themselves with the Password button; you can also reset it here.</p></div>':'';
  var note=(st.err?'<p class="er" role="alert">'+h(st.err)+'</p>':'')+(st.msg?'<p class="vr-ok" role="status">'+h(st.msg)+'</p>':'');
  if(V===undefined||(st.users===null&&!st.err))return head+form+note+'<p class="mu">Loading\u2026</p>';
  var rows=(st.users||[]).map(function(u){var ad=u.role==='adviser',act='';
-  if(!ad){act=st.rid===u.id?'<input id="vr-um-rp" type="text" autocomplete="off" spellcheck="false" placeholder="New password (8+ characters)"><button type="button" data-um="gen2">Generate</button><button type="button" class="p" data-um="rsave" data-id="'+h(u.id)+'">Save</button><button type="button" data-um="rcancel">Cancel</button>':'<button type="button" data-um="reset" data-id="'+h(u.id)+'">Reset password</button>'+(u.mfa>0?'<button type="button" data-um="r2" data-id="'+h(u.id)+'" data-email="'+h(u.email)+'">Reset 2-step</button>':'')+'<button type="button" class="d" data-um="del" data-id="'+h(u.id)+'" data-email="'+h(u.email)+'">Remove</button>'}
-  return '<tr><td class="l"><b>'+h(u.email)+'</b></td><td class="l"><span class="pill'+(ad?' ad':'')+'">'+(ad?'Adviser':'Client')+'</span></td><td class="l">'+dt(u.created_at)+'</td><td class="l">'+dt(u.last_sign_in_at)+'</td><td class="l">'+(u.mfa>0?'On':'Off')+'</td><td class="a">'+act+'</td></tr>'}).join('');
+  if(!ad){act=st.rid===u.id?'<span class="mu">Resetting password\u2026</span>':'<button type="button" data-um="reset" data-id="'+h(u.id)+'">Reset password</button><button type="button" class="d" data-um="del" data-id="'+h(u.id)+'" data-email="'+h(u.email)+'">Remove</button>'}
+  return '<tr><td class="l"><b>'+h(u.email)+'</b></td><td class="l"><span class="pill'+(ad?' ad':'')+'">'+(ad?'Adviser':'Client')+'</span></td><td class="l">'+dt(u.created_at)+'</td><td class="l">'+dt(u.last_sign_in_at)+'</td><td class="a">'+act+'</td></tr>'+(!ad&&st.rid===u.id?'<tr class="vr-rr"><td colspan="5"><div class="vr-rs"><label>New password for <b>'+h(u.email)+'</b> (8 to 10 characters)<input id="vr-um-rp" type="text" maxlength="10" autocomplete="off" spellcheck="false" placeholder="New password (8 to 10 characters)"></label><div class="tb"><button type="button" data-um="gen2">Generate</button><button type="button" data-um="copy2">Copy</button><button type="button" class="p" data-um="rsave" data-id="'+h(u.id)+'">Save</button><button type="button" data-um="rcancel">Cancel</button></div></div></td></tr>':'')}).join('');
  var n=(st.users||[]).filter(function(u){return u.role!=='adviser'}).length;
- return head+form+note+'<div class="tw"><table class="vr-ut"><thead><tr><th class="l">Email</th><th class="l">Role</th><th class="l">Created</th><th class="l">Last sign-in</th><th class="l">2-step</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="mu" style="margin:10px 0 0">'+n+' client login'+(n===1?'':'s')+'. Removing a login permanently deletes that client\u2019s saved data. Adviser logins are managed in the Supabase dashboard.</p>'}
+ return head+form+note+'<div class="tw"><table class="vr-ut"><thead><tr><th class="l">Email</th><th class="l">Role</th><th class="l">Created</th><th class="l">Last sign-in</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="mu" style="margin:10px 0 0">'+n+' client login'+(n===1?'':'s')+'. Removing a login permanently deletes that client\u2019s saved data. Adviser logins are managed in the Supabase dashboard.</p>'}
 function paint(){var el=document.getElementById('vr-um');if(!el)return;var keep={};['vr-um-em','vr-um-pw','vr-um-rp'].forEach(function(i){var x=document.getElementById(i);if(x)keep[i]=x.value});el.innerHTML=body();Object.keys(keep).forEach(function(i){var x=document.getElementById(i);if(x)x.value=keep[i]})}
 async function refresh(){try{var j=await window.VRSB.users({action:'list'});st.users=j.users||[];st.err=''}catch(e){st.err=errMsg(e)}st.t=Date.now()}
 async function load(){if(st.loading||!window.VRSB)return;st.loading=true;try{if(window.VR_ADV===undefined||window.VR_ADV===null)window.VR_ADV=await window.VRSB.isAdviser();if(window.VR_ADV)await refresh()}finally{st.loading=false}paint()}
@@ -7865,17 +8075,16 @@ document.addEventListener('click',function(ev){var b=ev.target.closest&&ev.targe
  if(a==='refresh'){return run(refresh)}
  if(a==='gen'){var x=document.getElementById('vr-um-pw');if(x)x.value=gen();return}
  if(a==='gen2'){var y=document.getElementById('vr-um-rp');if(y)y.value=gen();return}
+ if(a==='copy2'){var v2=val('vr-um-rp');if(v2&&navigator.clipboard)navigator.clipboard.writeText(v2).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1500)},function(){});return}
  if(a==='copy'){var v=val('vr-um-pw');if(v&&navigator.clipboard)navigator.clipboard.writeText(v).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1500)},function(){});return}
  if(a==='create'){var em=val('vr-um-em').trim().toLowerCase(),pw=val('vr-um-pw');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){st.err='Enter a valid email address.';return paint()}
-  if(pw.length<8){st.err='Password must be at least 8 characters.';return paint()}
+  if(pw.length<8||pw.length>10){st.err='Password must be 8 to 10 characters.';return paint()}
   return run(async function(){await window.VRSB.users({action:'create',email:em,password:pw});st.show=false;st.msg='Created '+em+'. Share the password with them securely.';await refresh()})}
- if(a==='reset'){st.rid=id;st.msg='';st.err='';return paint()}
+ if(a==='reset'){st.rid=id;st.msg='';st.err='';paint();var rp=document.getElementById('vr-um-rp');if(rp){try{rp.scrollIntoView({block:'nearest'});rp.focus()}catch(x){}}return}
  if(a==='rcancel'){st.rid=null;return paint()}
- if(a==='rsave'){var np=val('vr-um-rp');if(np.length<8){st.err='Password must be at least 8 characters.';return paint()}
+ if(a==='rsave'){var np=val('vr-um-rp');if(np.length<8||np.length>10){st.err='Password must be 8 to 10 characters.';return paint()}
   return run(async function(){await window.VRSB.users({action:'reset',id:id,password:np});st.rid=null;st.msg='Password updated. Share it with the client securely.'})}
- if(a==='r2'){if(!confirm('Reset two-step sign-in for '+(b.dataset.email||'this client')+'? They can sign in with their password and set it up again.'))return;
-  return run(async function(){await window.VRSB.users({action:'reset2fa',id:id});st.msg='Two-step sign-in reset for '+(b.dataset.email||'the client')+'.';await refresh()})}
  if(a==='del'){if(!confirm('Remove '+(b.dataset.email||'this client')+'? Their saved data is deleted permanently and this cannot be undone.'))return;
   return run(async function(){await window.VRSB.users({action:'delete',id:id});st.msg='Removed '+(b.dataset.email||'the login')+'.';await refresh()})}
 });
@@ -7883,68 +8092,220 @@ window.usersTab=function(){
  if(window.VRSB&&!st.loading&&(st.users===null||Date.now()-st.t>5000))setTimeout(load,0);
  return '<div class="card"><div id="vr-um">'+body()+'</div></div>'};
 })();</script>
-<style>#vr-cp{margin-left:6px;min-height:0;padding:5px 9px;font-size:12px;border-radius:99px;white-space:nowrap}
-#vr-cpm{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}
-#vr-cpm .bx{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;padding:20px;width:100%;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,.3);max-height:100%;overflow:auto}
+<style>html body .hd .vr-ver{color:inherit;opacity:.78}
+.vr-ver{font-size:11px;font-weight:600;color:var(--mu);white-space:nowrap;margin-left:4px;vertical-align:middle;letter-spacing:.2px}.vr-ver-lg{text-align:center;font-size:11px;color:var(--mu);margin:14px 0 0}
+#vr-cp{margin-left:6px;min-height:0;padding:5px 9px;font-size:12px;border-radius:99px;white-space:nowrap}
+#vr-cpm{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
+#vr-cpm .bx{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;padding:20px;width:100%;max-width:400px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
 #vr-cpm h2{margin:0 0 4px}#vr-cpm label{display:grid;gap:4px;margin-top:12px;font-size:.92em}
 #vr-cpm input[type=password],#vr-cpm input[type=text]{padding:9px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font:inherit}
-#vr-cpm .ac{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}#vr-cpm .er{min-height:1.2em;margin:10px 0 0}
-#vr-cpm .sec{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--bd)}#vr-cpm .sec>div{min-width:0}
-#vr-cpm .qr{display:block;margin:12px auto;width:180px;height:180px;background:#fff;border-radius:8px;padding:6px}#vr-cpm code{word-break:break-all;font-size:.9em}
-#vr-cpm .ok{color:var(--ok);margin:10px 0 0}#vr-mfa input{letter-spacing:.35em;font-variant-numeric:tabular-nums}
-.vr-back{background:none;border:0;color:var(--mu);text-decoration:underline;cursor:pointer;margin-top:10px;font:inherit;font-size:.9em}</style>
+#vr-cpm .ac{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}#vr-cpm .er{min-height:1.2em;margin:10px 0 0}</style>
 <script>(function(){
 function $(i){return document.getElementById(i)}function v(i){var x=$(i);return x?x.value:''}
-function h(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function close(){var m=$('vr-cpm');if(m)m.remove();document.removeEventListener('keydown',esc)}
 function esc(e){if(e.key==='Escape')close()}
-function show(html){var m=$('vr-cpm');if(!m){m=document.createElement('div');m.id='vr-cpm';m.innerHTML='<div class="bx" role="dialog" aria-modal="true"></div>';document.body.appendChild(m);document.addEventListener('keydown',esc);m.addEventListener('click',function(e){if(e.target===m)close()})}
- document.querySelector('#vr-cpm .bx').innerHTML=html}
-function on(id,fn){var x=$(id);if(x)x.addEventListener('click',fn)}
-function open(){if(!window.VRSB)return;menu()}
-/* ---- menu ---- */
-function menu(note){show('<h2>Account</h2><p class="mu" style="margin:0">'+h(window.VRSB.email())+'</p>'+(note?'<p class="ok" role="status">'+h(note)+'</p>':'')+'<div class="sec" style="margin-top:12px"><div><b>Password</b></div><button type="button" id="vr-m-pw">Change</button></div><div class="sec"><div><b>Two-step sign-in</b><div class="mu" id="vr-m-st">Checking\u2026</div></div><button type="button" id="vr-m-2f">Manage</button></div><div class="ac"><button type="button" id="vr-cpx">Close</button></div>');
- on('vr-cpx',close);on('vr-m-pw',pwView);on('vr-m-2f',function(){tfView()});
- window.VRSB.mfaList().then(function(l){var n=l.filter(function(f){return f.verified}).length,e=$('vr-m-st');if(e)e.textContent=n?'On \u00b7 '+n+' device'+(n>1?'s':''):'Off'},function(){var e=$('vr-m-st');if(e)e.textContent='Could not check'})}
-/* ---- change password ---- */
-function pwView(){show('<h2>Change password</h2><p class="mu" style="margin:0">Use 8 or more characters. Your other signed-in devices will be signed out.</p><label>Current password<input id="vr-cp0" type="password" autocomplete="current-password"></label><label>New password<input id="vr-cp1" type="password" autocomplete="new-password"></label><label>Confirm new password<input id="vr-cp2" type="password" autocomplete="new-password"></label><label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="vr-cps" type="checkbox"> Show passwords</label><p id="vr-cpe" class="er" role="alert"></p><div class="ac"><button type="button" id="vr-cpb">Back</button><button type="button" class="p" id="vr-cpv">Save password</button></div>');
- on('vr-cpb',function(){menu()});on('vr-cpv',savePw);
- $('vr-cps').addEventListener('change',function(e){['vr-cp0','vr-cp1','vr-cp2'].forEach(function(i){$(i).type=e.target.checked?'text':'password'})});$('vr-cp0').focus()}
-async function savePw(){var a=v('vr-cp0'),b=v('vr-cp1'),c=v('vr-cp2'),er=$('vr-cpe'),bt=$('vr-cpv');
+var RULE={min:8,max:10};
+async function open(){if($('vr-cpm')||!window.VRSB)return;var adv=null;try{adv=await window.VRSB.isAdviser()}catch(x){}RULE=adv===true?{min:14,max:72}:{min:8,max:10};if($('vr-cpm'))return;var m=document.createElement('div');m.id='vr-cpm';
+ m.innerHTML='<div class="bx" role="dialog" aria-modal="true" aria-labelledby="vr-cpt"><h2 id="vr-cpt">Change password</h2><p class="mu" style="margin:0">'+(RULE.max===10?'Use 8 to 10 characters.':'Use 14 or more characters.')+' Your other signed-in devices will be signed out.</p><label>Current password<input id="vr-cp0" type="password" autocomplete="current-password"></label><label>New password<input id="vr-cp1" type="password" maxlength="'+RULE.max+'" autocomplete="new-password"></label><label>Confirm new password<input id="vr-cp2" type="password" maxlength="'+RULE.max+'" autocomplete="new-password"></label><label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="vr-cps" type="checkbox"> Show passwords</label><p id="vr-cpe" class="er" role="alert"></p><div class="ac"><button type="button" id="vr-cpx">Cancel</button><button type="button" class="p" id="vr-cpv">Save password</button></div></div>';
+ document.body.appendChild(m);document.addEventListener('keydown',esc);
+ m.addEventListener('click',function(e){if(e.target===m)close()});
+ $('vr-cpx').addEventListener('click',close);$('vr-cpv').addEventListener('click',save);
+ $('vr-cps').addEventListener('change',function(e){['vr-cp0','vr-cp1','vr-cp2'].forEach(function(i){$(i).type=e.target.checked?'text':'password'})});
+ $('vr-cp0').focus()}
+async function save(){var a=v('vr-cp0'),b=v('vr-cp1'),c=v('vr-cp2'),er=$('vr-cpe'),bt=$('vr-cpv');
  if(!a){er.textContent='Enter your current password.';return}
- if(b.length<8){er.textContent='New password must be at least 8 characters.';return}
- if(b.length>72){er.textContent='New password must be at most 72 characters.';return}
+ if(b.length<RULE.min){er.textContent='New password must be at least '+RULE.min+' characters.';return}
+ if(b.length>RULE.max){er.textContent='New password must be at most '+RULE.max+' characters.';return}
  if(b!==c){er.textContent='The two new passwords do not match.';return}
  if(b===a){er.textContent='New password must be different from the current one.';return}
  bt.disabled=true;er.textContent='';
- try{await window.VRSB.changePassword(a,b);show('<h2>Password changed</h2><p class="mu">Use the new password next time you sign in. Your other devices have been signed out.</p><div class="ac"><button type="button" class="p" id="vr-cpd">Done</button></div>');on('vr-cpd',close);$('vr-cpd').focus()}
+ try{await window.VRSB.changePassword(a,b);var bx=document.querySelector('#vr-cpm .bx');bx.innerHTML='<h2>Password changed</h2><p class="mu">Use the new password next time you sign in. Your other devices have been signed out.</p><div class="ac"><button type="button" class="p" id="vr-cpd">Done</button></div>';$('vr-cpd').addEventListener('click',close);$('vr-cpd').focus()}
  catch(e){er.textContent=(e&&e.message)||'Could not change the password.';bt.disabled=false;if(e&&e.code==='wrong'){$('vr-cp0').select()}}}
-/* ---- two-step sign-in ---- */
-async function tfView(note,err){show('<h2>Two-step sign-in</h2><p class="mu">Loading\u2026</p>');var l;try{l=await window.VRSB.mfaList()}catch(e){show('<h2>Two-step sign-in</h2><p class="er" role="alert">Could not load. Check your connection.</p><div class="ac"><button type="button" id="vr-cpb">Back</button></div>');on('vr-cpb',function(){menu()});return}
- var ok=l.filter(function(f){return f.verified}),rows=ok.map(function(f){return '<div class="sec"><div>'+h(f.name)+'</div><button type="button" class="d" data-rm="'+h(f.id)+'">Remove</button></div>'}).join('');
- show('<h2>Two-step sign-in</h2><p class="mu" style="margin:0">'+(ok.length?'<b>On.</b> Signing in asks for a 6-digit code from your authenticator app.':'<b>Off.</b> Adds a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password) every time you sign in.')+'</p>'+(note?'<p class="ok" role="status">'+h(note)+'</p>':'')+(err?'<p class="er" role="alert">'+h(err)+'</p>':'')+(ok.length?'<div style="margin-top:10px">'+rows+'</div>'+(ok.length<3?'<p class="mu" style="margin:10px 0 0">Tip: add a second device as a backup. If you lose your only device, an adviser must reset it for you (a lost adviser device is reset in the Supabase dashboard).</p>':''):'')+'<div class="ac"><button type="button" id="vr-cpb">Back</button>'+(ok.length<3?'<button type="button" class="p" id="vr-tf-add">'+(ok.length?'Add another device':'Set up')+'</button>':'')+'</div>');
- on('vr-cpb',function(){menu()});on('vr-tf-add',enrol);
- Array.prototype.forEach.call(document.querySelectorAll('#vr-cpm [data-rm]'),function(b){b.addEventListener('click',function(){if(ok.length===1&&!confirm('Remove your only authenticator? Two-step sign-in will be switched off.'))return;if(ok.length>1&&!confirm('Remove this device?'))return;b.disabled=true;window.VRSB.mfaRemove(b.dataset.rm).then(function(){tfView(ok.length===1?'Two-step sign-in is off.':'Device removed.')},function(e){tfView('',e&&e.message||'Could not remove it.')})})})}
-async function enrol(){show('<h2>Set up two-step sign-in</h2><p class="mu">Preparing\u2026</p>');var r;try{r=await window.VRSB.mfaEnroll()}catch(e){tfView('',(e&&e.message)||'Could not start setup.');return}
- show('<h2>Set up two-step sign-in</h2><p class="mu" style="margin:0">1. Open your authenticator app and scan this code.</p>'+(r.qr?'<img class="qr" alt="QR code for your authenticator app" src="'+h(r.qr)+'">':'')+'<p class="mu" style="margin:0">Cannot scan? Enter this key instead:<br><code>'+h(r.secret)+'</code></p><p class="mu" style="margin:12px 0 0">2. Enter the 6-digit code the app shows.</p><label>6-digit code<input id="vr-tf-c" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"></label><p id="vr-cpe" class="er" role="alert"></p><div class="ac"><button type="button" id="vr-cpb">Cancel</button><button type="button" class="p" id="vr-tf-ok">Turn on</button></div>');
- on('vr-cpb',function(){tfView()});$('vr-tf-c').focus();
- async function go(){var c=v('vr-tf-c').replace(/\s/g,''),er=$('vr-cpe');if(!/^\d{6}$/.test(c)){er.textContent='Enter the 6-digit code.';return}var bt=$('vr-tf-ok');bt.disabled=true;er.textContent='';
-  try{await window.VRSB.mfaConfirm(r.id,c);tfView('Two-step sign-in is on. Your other devices have been signed out.')}catch(e){er.textContent=(e&&(e.status===400||e.status===422))?'That code is not right. Check the code in the app and try again.':'Could not verify. Check your connection and try again.';bt.disabled=false;$('vr-tf-c').select()}}
- on('vr-tf-ok',go);$('vr-tf-c').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();go()}})}
 document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('#vr-cp');if(b)open()});
-/* ---- code step on the sign-in screen ---- */
-var pend=null,tries=0;
-function reset(){pend=null;tries=0;location.reload()}
-window.VRMFA={active:function(){return !!pend},
- start:function(r){pend=r;tries=0;var u=$('lu'),p=$('lp');if(!u||!p)return;p.value='';u.parentNode.style.display='none';p.parentNode.style.display='none';
-  if(!$('vr-mfa'))$('le').insertAdjacentHTML('beforebegin','<div class="fl" id="vr-mfa"><input id="vr-code" name="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" placeholder=" "><label for="vr-code">6-digit code</label></div>');
-  var t=$('lgt');if(t)t.textContent='Two-step verification';var go=document.querySelector('#lgf button.go');if(go)go.textContent='Verify';
-  if(!$('vr-mfab'))$('le').insertAdjacentHTML('afterend','<button type="button" class="vr-back" id="vr-mfab">Back to sign in</button>');on('vr-mfab',reset);
-  $('le').textContent='Enter the 6-digit code from your authenticator app.';var c=$('vr-code');c.addEventListener('input',function(){if(/^\d{6}$/.test(c.value.replace(/\s/g,'')))$('lgf').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}))});c.focus()},
- submit:function(er){var c=v('vr-code').replace(/\s/g,'');if(!/^\d{6}$/.test(c)){er.textContent='Enter the 6-digit code.';return}er.textContent='Checking\u2026';
-  window.VRSB.verifyMfa(pend,c).then(function(){try{sessionStorage.setItem('fs-auth','1');sessionStorage.removeItem('fs-user')}catch(e){}location.reload()},function(x){tries++;$('vr-code').value='';
-   if(tries>=5){er.textContent='Too many wrong codes. Sign in again.';setTimeout(reset,1500);return}
-   er.textContent=(x&&(x.status===400||x.status===422))?'That code is not right. Try again.':'Could not verify. Check your connection and try again.';$('vr-code').focus()})}};
 })();</script>
+<style>.vr-sn input{padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--tx);font:inherit;width:100%;box-sizing:border-box}
+.vr-sn-g{display:grid;gap:10px;max-width:520px;margin:12px 0}.vr-sn-g label{display:grid;gap:4px;font-size:.92em}.vr-sn-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.vr-sn-b{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.vr-sn-b.m0{margin-top:0}
+.vr-sn-l{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.vr-sn-i{min-width:0;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;background:var(--card);overflow-wrap:anywhere}.vr-sn-i table{overflow-wrap:normal}
+.vr-sn-t{width:100%;min-width:0!important;border-collapse:collapse;font-size:12px;margin-top:10px;table-layout:auto}.vr-sn-t th,.vr-sn-t td{padding:4px 6px;border-bottom:1px solid var(--bd);text-align:left}.vr-sn-t td.vr-r,.vr-sn-t th.vr-r{text-align:right;white-space:nowrap;width:1%;min-width:0}
+.vr-sn .vr-ok{color:var(--ok);margin:10px 0 0}</style>
+<script>(function(){
+var st={list:null,err:'',msg:'',loading:false,busy:false,t:0,label:'',from:'',to:'',q:'',open:null,od:null,filtered:false};
+function h(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function money(v){var n=+v;return isFinite(n)?'\u20b9 '+n.toLocaleString('en-IN',{maximumFractionDigits:0}):'\u2014'}
+function dt(s){var x=new Date(s);return isNaN(x)?'\u2014':x.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+function errMsg(e){var m=String(e&&e.message||'');if(/\b404\b/.test(m))return 'Snapshots are not set up yet. Run the latest supabase/schema.sql in Supabase (see DEPLOY.md), then reload.';if(e&&e.code==='permission_denied')return 'Not allowed. Sign out and sign in again, or run the latest supabase/schema.sql.';return m&&!/^http /.test(m)?m:'Something went wrong. Check your connection and try again.'}
+function ymd(s,end){var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');if(!m)return null;var d=end?new Date(+m[1],m[2]-1,+m[3],23,59,59,999):new Date(+m[1],m[2]-1,+m[3],0,0,0,0);return isNaN(d)?null:d.toISOString()}
+function query(){var f={from:ymd(st.from,false),to:ymd(st.to,true),q:st.q};if(f.from&&f.to&&f.from>f.to)throw new Error('The From date is after the To date.');st.filtered=!!(f.from||f.to||st.q.trim());return f}
+async function refresh(){var f=query();st.list=await window.VRSB.snap.list(f);st.err='';st.t=Date.now()}
+async function load(){if(st.loading||!window.VRSB)return;st.loading=true;try{await refresh()}catch(e){st.err=errMsg(e);st.t=Date.now();if(st.list===null)st.list=[]}finally{st.loading=false}paint()}
+async function run(fn){st.busy=true;st.err='';st.msg='';paint();try{await fn()}catch(e){st.err=errMsg(e)}st.busy=false;paint()}
+function holdTable(d){var A=(d&&d.assets)||[];if(!A.length)return '<p class="mu" style="margin:8px 0 0">This snapshot has no holdings.</p>';
+ return '<table class="vr-sn-t"><thead><tr><th>Holding</th><th class="vr-r">Value</th></tr></thead><tbody>'+A.map(function(x){return '<tr><td>'+h(x.name)+'<div class="mu" style="font-size:11px">'+h(x.cat)+'</div></td><td class="vr-r">'+(x.type==='gratuity'?'\u2014':money(x.value))+'</td></tr>'}).join('')+'</tbody></table>'}
+function top(){
+ var top='<h2>Holding snapshots</h2><p class="mu" style="margin:2px 0 0">Save a dated copy of your current holdings in the database. Search copies by date and restore any of them later. Restoring first saves your current holdings, so nothing is lost.</p>'
+  +'<div class="vr-sn-g"><label>Name for this snapshot (optional)<input id="vr-sn-lb" type="text" maxlength="60" placeholder="e.g. Before March rebalance" autocomplete="off" value="'+h(st.label)+'"></label><div class="vr-sn-b m0"><button type="button" class="p" data-sn="save">Save snapshot now</button></div></div>'
+  +'<div class="sub2">Find a snapshot</div><div class="vr-sn-g"><div class="vr-sn-2"><label>From date<input id="vr-sn-fr" type="date" value="'+h(st.from)+'"></label><label>To date<input id="vr-sn-to" type="date" value="'+h(st.to)+'"></label></div><label>Name contains<input id="vr-sn-q" type="text" maxlength="60" autocomplete="off" value="'+h(st.q)+'"></label><div class="vr-sn-b m0"><button type="button" class="p" data-sn="search">Search</button><button type="button" data-sn="clear">Clear</button></div></div>';
+ return top}
+function res(){var dis=st.busy?' disabled':'';
+ var note=(st.err?'<p class="er" role="alert">'+h(st.err)+'</p>':'')+(st.msg?'<p class="vr-ok" role="status">'+h(st.msg)+'</p>':'');
+ if(st.list===null)return note+'<p class="mu">Loading\u2026</p>';
+ var L=st.list.map(function(r){var o=st.open===r.id;
+  return '<li class="vr-sn-i"><b>'+h(dt(r.created_at))+'</b>'+(r.label?' \u00b7 '+h(r.label):'')+'<div class="mu" style="margin-top:2px">'+(r.plan?'Plan: '+h(r.plan)+' \u00b7 ':'')+h(r.holdings_count)+' holding'+(+r.holdings_count===1?'':'s')+' \u00b7 Total '+h(money(r.total_value))+'</div>'
+   +'<div class="vr-sn-b"><button type="button" data-sn="view" data-id="'+h(r.id)+'"'+dis+'>'+(o?'Hide holdings':'View holdings')+'</button><button type="button" class="p" data-sn="restore" data-id="'+h(r.id)+'"'+dis+'>Restore</button><button type="button" class="d" data-sn="del" data-id="'+h(r.id)+'"'+dis+'>Delete</button></div>'+(o&&st.od?holdTable(st.od):'')+'</li>'}).join('');
+ var cnt=st.list.length,sum='<p class="mu" style="margin:12px 0 0">'+(cnt?cnt+' snapshot'+(cnt===1?'':'s')+(st.filtered?' match your search':'')+(cnt>=200?' (showing the latest 200)':'')+'.':(st.filtered?'No snapshots match your search.':'No snapshots yet. Press \u201cSave snapshot now\u201d to save the first one.'))+'</p>';
+ return note+sum+(cnt?'<ul class="vr-sn-l">'+L+'</ul>':'')}
+function body(){return top()+'<div id="vr-sn-r">'+res()+'</div>'}
+function setv(id,v){var e=document.getElementById(id);if(e)e.value=v}
+function paint(){var r=document.getElementById('vr-sn-r');if(r){r.innerHTML=res();return}var el=document.getElementById('vr-sn');if(el)el.innerHTML=body()}
+document.addEventListener('input',function(e){var t=e.target;if(!t||!t.id||t.id.indexOf('vr-sn-')!==0)return;if(t.id==='vr-sn-lb')st.label=t.value;else if(t.id==='vr-sn-fr')st.from=t.value;else if(t.id==='vr-sn-to')st.to=t.value;else if(t.id==='vr-sn-q')st.q=t.value});
+document.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target&&e.target.id==='vr-sn-q'&&!st.busy){e.preventDefault();run(refresh)}});
+document.addEventListener('click',function(ev){var b=ev.target.closest&&ev.target.closest('[data-sn]');if(!b||!document.getElementById('vr-sn'))return;var a=b.dataset.sn,id=b.dataset.id;if(st.busy)return;
+ if(a==='save'){var g=window.vrHoldings.get();if(!g.count){st.err='There are no holdings to save yet.';st.msg='';return paint()}
+  return run(async function(){await window.VRSB.snap.create({label:st.label.trim(),plan:g.plan,count:g.count,total:g.total,data:g.data});st.label='';setv('vr-sn-lb','');st.msg='Snapshot saved ('+g.count+' holding'+(g.count===1?'':'s')+').';await refresh()})}
+ if(a==='search')return run(refresh);
+ if(a==='clear'){st.from=st.to=st.q='';setv('vr-sn-fr','');setv('vr-sn-to','');setv('vr-sn-q','');st.open=null;st.od=null;return run(refresh)}
+ if(a==='view'){if(st.open===id){st.open=null;st.od=null;return paint()}
+  return run(async function(){var r=await window.VRSB.snap.get(id);st.open=id;st.od=r.data})}
+ if(a==='restore'){var row=(st.list||[]).filter(function(r){return r.id===id})[0],cur=window.vrHoldings.get(),when=row?dt(row.created_at):'this date';
+  var msg='Restore the holdings saved on '+when+(row&&row.label?' ('+row.label+')':'')+'?\n\nYour current '+cur.count+' holding'+(cur.count===1?'':'s')+' will be replaced.'+(cur.count?' A snapshot of your current holdings is saved first, so you can come back to them.':'')+((row&&row.plan&&cur.plan&&row.plan!==cur.plan)?'\n\nNote: this copy was saved from the plan \u201c'+row.plan+'\u201d. You are now in \u201c'+cur.plan+'\u201d and its holdings will be replaced.':'');
+  if(!confirm(msg))return;
+  return run(async function(){var r=await window.VRSB.snap.get(id);if(!r.data||!Array.isArray(r.data.assets))throw new Error('This snapshot has no holdings.');
+   if(cur.count)await window.VRSB.snap.create({label:('Auto: before restoring '+when).slice(0,120),plan:cur.plan,count:cur.count,total:cur.total,data:cur.data});
+   window.vrHoldings.apply(r.data);st.open=null;st.od=null;st.msg='Holdings restored from '+when+'. Press Undo in the message at the bottom, or restore the \u201cAuto: before restoring\u201d snapshot to go back.';await refresh()})}
+ if(a==='del'){if(!confirm('Delete this snapshot permanently? Your current holdings are not affected.'))return;
+  return run(async function(){await window.VRSB.snap.remove(id);if(st.open===id){st.open=null;st.od=null}st.msg='Snapshot deleted.';await refresh()})}
+});
+window.snapUI=function(){if(!window.VRSB||!window.VRSB.snap||!window.vrHoldings)return '';
+ if(!st.loading&&(st.list===null||Date.now()-st.t>5000))setTimeout(load,0);
+ return '<div class="card vr-sn" id="vr-snc"><div id="vr-sn">'+body()+'</div></div>'};
+})();</script>
+<style id="vr-ux-final">
+/* ===== build 108: login polish + one professional mobile header for every skin and theme ===== */
+html body #lg .lform .vr-ver-lg{margin:auto 0 0;padding-top:22px;text-align:center;font-size:11px;color:var(--mu)}
+html body #lg label.lgsv{display:flex;align-items:center;gap:10px;margin:16px 0 0;font-size:14px;color:var(--tx);cursor:pointer;position:static}
+html body #lg label.lgsv input{flex:none;width:18px;height:18px;min-width:18px;margin:0;padding:0;accent-color:var(--ac)}
+html body #lg label.lgsv span{line-height:1.2}
+@media (max-width:760px){
+ html body #lg .lform{padding:24px 22px 20px}
+ html body #lg .lform h1{font-size:24px}
+ html body #lg .lform .go{margin-top:18px}
+ html body #lg .er{min-height:0;margin:8px 0 0}
+}
+@media (max-width:720px){
+ html:not(#vrx) body header.hd .hdi{display:grid!important;grid-template-columns:minmax(0,1fr) auto auto auto;grid-template-areas:"brand who cp so" "nav nav nav nav";align-items:center;column-gap:8px;row-gap:6px;padding:8px 12px 0!important;max-width:none!important;min-height:0!important;flex-wrap:nowrap!important}
+ html:not(#vrx) body header.hd .hdi>*{margin:0!important}
+ html:not(#vrx) body header.hd .brand{grid-area:brand;min-width:0;display:flex!important;align-items:center;gap:10px;flex:none}
+ html:not(#vrx) body header.hd .brand>div:last-child{min-width:0}
+ html:not(#vrx) body header.hd .logo{width:38px;height:38px;flex:none}
+ html:not(#vrx) body header.hd .wm{font-size:18px;font-weight:700;line-height:1.1;white-space:nowrap}
+ html:not(#vrx) body header.hd .wm .vr-ver{display:block;margin:3px 0 0;font-size:10.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis}
+ html:not(#vrx) body header.hd .tg,html:not(#vrx) body header.hd .fhp{display:none!important}
+ html:not(#vrx) body header.hd #who{grid-area:who;font-size:0!important;width:38px;height:38px;padding:0!important;max-width:none!important;border-radius:50%!important;display:grid;place-items:center;overflow:hidden;color:inherit!important;background:color-mix(in srgb,currentColor 14%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important}
+ html:not(#vrx) body header.hd #who::before{content:attr(data-ini);font-size:14px;font-weight:700;line-height:1}
+ html:not(#vrx) body header.hd #who[hidden]{display:none!important}
+ html:not(#vrx) body header.hd :is(#vr-cp,#so){height:38px;min-height:38px!important;margin:0!important;border-radius:10px!important;display:inline-flex!important;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:inherit!important;background:color-mix(in srgb,currentColor 10%,transparent)!important;border:1px solid color-mix(in srgb,currentColor 35%,transparent)!important;box-shadow:none!important;font-weight:600}
+ html:not(#vrx) body header.hd #vr-cp{grid-area:cp;font-size:0!important;width:38px;padding:0!important}
+ html:not(#vrx) body header.hd #vr-cp::before{content:"";display:block;width:18px;height:18px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z'/%3E%3Ccircle cx='16.5' cy='7.5' r='.5'/%3E%3C/svg%3E") center/contain no-repeat}
+ html:not(#vrx) body header.hd #so{grid-area:so;font-size:0!important;width:38px;padding:0!important;min-width:0!important}
+ html:not(#vrx) body header.hd #so::before{margin:0!important;width:20px!important;height:20px!important;background:currentColor!important}
+ html[data-uic=off]:not(#vrx) body header.hd #vr-cp{font-size:12px!important;width:auto;padding:0 10px!important}
+ html[data-uic=off]:not(#vrx) body header.hd #vr-cp::before{display:none}
+ html:not(#vrx) body header.hd nav{grid-area:nav;display:flex!important;gap:0!important;width:100%!important;margin:0!important;padding:0!important;border:0!important;border-top:1px solid color-mix(in srgb,currentColor 16%,transparent)!important;border-radius:0!important;background:none!important;box-shadow:none!important;overflow-x:auto;position:static!important}
+ html:not(#vrx) body header.hd nav button{flex:1 1 0!important;min-width:0;height:auto!important;min-height:46px!important;padding:6px 4px!important;margin:0!important;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0!important;border-bottom:3px solid transparent!important;border-radius:0!important;background:none!important;box-shadow:none!important;color:inherit!important;opacity:.72;font-size:12px!important;font-weight:500;line-height:1.15;white-space:normal;text-align:center}
+ html:not(#vrx) body header.hd nav button::before{margin:0!important}
+ html:not(#vrx) body header.hd nav button[aria-current]{opacity:1;font-weight:700;border-bottom-color:currentColor!important;background:color-mix(in srgb,currentColor 10%,transparent)!important}
+}
+@media (max-width:380px){
+ html:not(#vrx) body header.hd #who{display:none!important}
+}
 
+@media (max-width:720px){
+ html:not(#vrx) body #lk-sw{bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
+ html[data-skin=enterprise]:not(#vrx) body .msd-b{justify-content:space-between!important;min-height:44px!important;padding:0 14px!important;text-align:left!important;color:var(--tx)!important;background:var(--card)!important;border:1px solid color-mix(in srgb,currentColor 24%,transparent)!important;border-radius:8px!important}
+ html[data-skin=enterprise]:not(#vrx) body .tb{justify-content:flex-start!important;align-items:stretch!important;gap:10px!important}
+ html[data-skin=enterprise]:not(#vrx) body .tb>:is(input,select,button){min-height:44px!important;box-sizing:border-box}
+ html[data-skin=enterprise]:not(#vrx) body .tb>button{min-width:44px!important;padding:0 10px!important;color:var(--tx)!important;background:var(--card)!important;border:1px solid color-mix(in srgb,currentColor 24%,transparent)!important;border-radius:8px!important}
+}
+</style>
+<script>/* initial letter shown in the round account badge on phones (the full email stays in the tooltip) */
+(function(){var w=document.getElementById('who');if(!w)return;function ini(){var t=(w.textContent||'').replace(/[^\p{L}\p{N}@._-]+/gu,' ').trim();w.dataset.ini=(t.charAt(0)||'?').toUpperCase();w.title=t?'Signed in as '+t:'Signed in'}ini();try{new MutationObserver(ini).observe(w,{childList:true,characterData:true,subtree:true})}catch(e){}})();
+(function(){var so=document.getElementById('so');if(so){so.title='Sign out';so.setAttribute('aria-label','Sign out')}})();
+</script>
+<style id="vr-ent-css">
+.ent-cards{display:none;flex-direction:column;gap:8px;margin-top:6px}
+html body .ent-t :is(th,td){text-align:left!important;position:static!important;left:auto!important;border-right:0!important;border-left:0!important;box-shadow:none!important;min-width:0!important}
+html body .ent-t :is(th,td).ent-n{text-align:right!important;white-space:nowrap}
+html body .ent-t th button{white-space:nowrap}
+html body .ent-t td{vertical-align:top}
+@media (max-width:720px){
+ html body .ent-t{display:none!important}
+ html body .ent-cards{display:flex}
+ html body .vr-entpg .mw{max-height:none;overflow:visible}
+}
+</style>
+<script id="vr-ent">
+/* Reports > Entry Dates: when each holding was added, for every Goal Planner client.
+   Read-only. It uses the plan data that is already saved to the database (field "ca" on each holding),
+   the same data the optional SQL view public.vr_holdings_added exposes. */
+(function(){
+var ST={c:'',r:'all',q:'',k:'ca',d:-1},CA=null,DAY=864e5;
+function ts(s){var t=s?new Date(s).getTime():NaN;return isNaN(t)?null:t}
+function fyStart(){var n=new Date(),y=n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;return new Date(y,3,1).getTime()}
+function load(){
+ var L=(window.gppHoldingList&&window.gppHoldingList())||[],all=[];
+ L.forEach(function(c){c.items.forEach(function(x){all.push({cid:c.id,client:c.name,active:c.active,name:x.name,cat:x.cat,val:x.val,ca:x.ca||'',ma:x.ma||'',t:ts(x.ca),tm:ts(x.ma)})})});
+ return{L:L,all:all}
+}
+function pick(){
+ var d=CA||(CA=load()),now=Date.now(),
+ base=d.all.filter(function(o){return!ST.c||o.cid===ST.c}),
+ inR=function(o){var r=ST.r;if(r==='all')return true;if(r==='unset')return o.t==null;if(o.t==null)return false;if(r==='30')return now-o.t<=30*DAY;if(r==='90')return now-o.t<=90*DAY;if(r==='fy')return o.t>=fyStart();return true},
+ q=(ST.q||'').trim().toLowerCase(),
+ L=base.filter(inR).filter(function(o){return!q||[o.client,o.name,o.cat,o.t==null?'not set':fdd(o.ca),f(o.val)].join(' ').toLowerCase().indexOf(q)>-1}),
+ key=function(o){return ST.k==='ca'?o.t:ST.k==='ma'?o.tm:ST.k==='val'?o.val:String(o[ST.k]||'').toLowerCase()};
+ L.sort(function(x,y){var a=key(x),b=key(y);if(a==null&&b==null)return x.name<y.name?-1:1;if(a==null)return 1;if(b==null)return -1;return(a>b?1:a<b?-1:0)*ST.d});
+ return{d:d,base:base,L:L,now:now}
+}
+var dt=function(o){return o.t==null?'<span class="mu">Not set</span>':esc(fdd(o.ca))};
+function bodyHTML(p){
+ var L=p.L,base=p.base,n=base.length,dated=base.filter(function(o){return o.t!=null}).length,
+ last30=base.filter(function(o){return o.t!=null&&p.now-o.t<=30*DAY}).length,
+ sum=L.reduce(function(q,o){return q+o.val},0),
+ tiles='<div class="rsum" aria-label="Entry date summary"><div><span class="mu">Holdings'+(ST.c?' (this client)':' (all clients)')+'</span><b>'+n+'</b></div><div><span class="mu">With an entry date</span><b>'+dated+'</b></div><div><span class="mu">Entry date not set</span><b>'+(n-dated)+'</b></div><div><span class="mu">Added in the last 30 days</span><b>'+last30+'</b></div><div><span class="mu">Value of holdings shown</span><b>'+f(sum)+'</b></div></div>';
+ if(!L.length)return tiles+'<div class="em">No holdings match your filters.</div>';
+ var th=function(k,t,r){return'<th'+(r?' class="ent-n"':'')+' aria-sort="'+(ST.k===k?(ST.d>0?'ascending':'descending'):'none')+'"><button type="button" data-ek="'+k+'">'+t+(ST.k===k?(ST.d>0?' ▲':' ▼'):'')+'</button></th>'},
+ head='<tr>'+th('ca','Entry date')+th('client','Client')+th('name','Holding')+th('cat','Category')+th('val','Current value',1)+th('ma','Last edited',1)+'</tr>',
+ rows=L.map(function(o){return'<tr><td>'+dt(o)+'</td><td>'+esc(o.client)+'</td><td>'+esc(o.name)+'</td><td>'+esc(o.cat)+'</td><td class="ent-n">'+f(o.val)+'</td><td class="ent-n">'+(o.tm==null?'—':esc(fdd(o.ma)))+'</td></tr>'}).join('')+'<tr class="vr-tot"><td></td><td></td><td><b>Total shown ('+L.length+')</b></td><td></td><td class="ent-n"><b>'+f(sum)+'</b></td><td></td></tr>',
+ cards='<div class="ent-cards">'+L.map(function(o){return'<details class="vr-scd"><summary><b>'+esc(o.name)+'</b><span>'+esc(o.client)+' · '+(o.t==null?'Entry date not set':'Added '+esc(fdd(o.ca)))+'</span><em>'+f(o.val)+'</em></summary><dl><dt>Entry date</dt><dd>'+dt(o)+'</dd><dt>Client</dt><dd>'+esc(o.client)+'</dd><dt>Category</dt><dd>'+esc(o.cat)+'</dd><dt>Last edited</dt><dd>'+(o.tm==null?'—':esc(fdd(o.ma)))+'</dd></dl></details>'}).join('')+'</div>';
+ return tiles+'<div class="mw"><table class="rt ent-t" aria-label="Holdings by entry date">'+head+rows+'</table>'+cards+'</div>'
+}
+window.repEnt=function(){
+ CA=load();var p=pick(),d=p.d,
+ head='<div class="rph"><div><h1>Holdings by Entry Date</h1><div class="rpf">When each holding was added, across all your clients. Holdings added before dates were tracked show “Not set”: open the holding and choose its Entry date.</div></div><div class="rpr">'+rvTog()+'</div></div>';
+ if(!d.all.length)return head+'<div class="card"><div class="em">No holdings yet. Add a holding and its entry date will appear here.</div></div>';
+ var so=[['ca','Entry date'],['client','Client'],['name','Holding'],['cat','Category'],['val','Current value'],['ma','Last edited']],
+ rg=[['all','Added: any time'],['30','Added: last 30 days'],['90','Added: last 90 days'],['fy','Added: this financial year'],['unset','Entry date not set']];
+ return head+'<div class="card vr-entpg"><div class="rph2"><h2>Entry dates</h2><button id="entcsv" type="button">Copy as CSV</button></div>'+
+  '<div class="tb"><select id="entc" aria-label="Client"><option value="">All clients</option>'+d.L.map(function(c){return'<option value="'+esc(c.id)+'"'+(ST.c===c.id?' selected':'')+'>'+esc(c.name)+(c.active?' (current)':'')+'</option>'}).join('')+'</select>'+
+  '<select id="entr" aria-label="Added in">'+rg.map(function(r){return'<option value="'+r[0]+'"'+(ST.r===r[0]?' selected':'')+'>'+r[1]+'</option>'}).join('')+'</select></div>'+
+  '<div class="tb"><input id="entq" type="search" placeholder="Search holding, client, category…" aria-label="Search holdings" value="'+esc(ST.q)+'"><select id="ents" aria-label="Sort by">'+so.map(function(r){return'<option value="'+r[0]+'"'+(ST.k===r[0]?' selected':'')+'>Sort: '+r[1]+'</option>'}).join('')+'</select><button id="entd" type="button" aria-label="Toggle sort direction">'+(ST.d>0?'▲':'▼')+'</button></div>'+
+  '<div id="ent-body">'+bodyHTML(p)+'</div><div class="mu" style="margin-top:8px">Entry date = the date you added the holding (set it in Add/Edit holding → Entry date) · “Not set” = added before dates were tracked · click a heading to sort · the same data is in the optional database view <code>vr_holdings_added</code></div></div>'
+};
+document.addEventListener('change',function(e){var t=e.target;if(!t||!t.id)return;
+ if(t.id==='entc'){ST.c=t.value;render()}
+ else if(t.id==='entr'){ST.r=t.value;render()}
+ else if(t.id==='ents'){ST.k=t.value;ST.d=(t.value==='ca'||t.value==='val'||t.value==='ma')?-1:1;render()}});
+document.addEventListener('input',function(e){var t=e.target;if(t&&t.id==='entq'){ST.q=t.value;var b=document.getElementById('ent-body');if(b)b.innerHTML=bodyHTML(pick())}});
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-ek],#entd,#entcsv');if(!t)return;
+ if(t.id==='entd'){ST.d=-ST.d;render();return}
+ if(t.dataset&&t.dataset.ek){var k=t.dataset.ek;if(ST.k===k)ST.d=-ST.d;else{ST.k=k;ST.d=(k==='ca'||k==='val'||k==='ma')?-1:1}render();return}
+ if(t.id==='entcsv'){var p=pick(),q=function(v){v=String(v==null?'':v);return/[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v},
+  lines=[['Entry date','Client','Holding','Category','Current value','Last edited'].map(q).join(',')].concat(p.L.map(function(o){return[o.t==null?'':ymdLoc(o.ca),o.client,o.name,o.cat,Math.round(o.val),o.tm==null?'':ymdLoc(o.ma)].map(q).join(',')})),
+  txt=lines.join('\r\n'),done=function(){var s=t.textContent;t.textContent='Copied';setTimeout(function(){t.textContent=s},1500)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,function(){fb()});else fb();
+  function fb(){var a=document.createElement('textarea');a.value=txt;a.style.cssText='position:fixed;opacity:0';document.body.appendChild(a);a.select();try{document.execCommand('copy');done()}catch(x){}a.remove()}}});
+window.repEntData=function(){return pick()};
+})();
+</script>
 </body></html>
