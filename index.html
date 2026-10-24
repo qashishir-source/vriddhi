@@ -73,8 +73,8 @@ async function snapGet(id){if(!SNID.test(String(id||'')))throw new Error('Bad sn
 async function snapCreate(o){var s=await token(),r=await rest('vr_holding_snapshots?select=id,created_at',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:s.uid,label:String(o.label||'').slice(0,120),note:String(o.note||'').slice(0,500),plan:String(o.plan||'').slice(0,120),holdings_count:Math.max(0,Math.round(+o.count||0)),total_value:+o.total||0,data:o.data})}),a=await r.json();return a[0]}
 async function snapRemove(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token();await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid,{method:'DELETE',headers:{Prefer:'return=minimal'}})}
 /* the version shown in the header and on the sign-in screen: change it here only */
-window.VR_VERSION='2.6.0'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
-window.VR_BUILD_NO=112; window.VR_BUILD_DATE='2026-10-24'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
+window.VR_VERSION='2.6.1'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
+window.VR_BUILD_NO=114; window.VR_BUILD_DATE='2026-10-24'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
 document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg')){var host=f.querySelector('.lform')||f;host.insertAdjacentHTML('beforeend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')}});
 window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,snap:{list:snapList,get:snapGet,create:snapCreate,remove:snapRemove},email:function(){var s=ses();return s&&s.email||''}}:null;
 /* clients (non-advisers) do not see the Users tab */
@@ -1978,6 +1978,9 @@ const polRow=(ix,s)=>Math.floor((ix-3)/12)-s.start+2;
 function polApply(s,rows){const P=s.policies||[];rows.forEach(r=>{r.pay=0;r.payR=0;r.payL=0});P.forEach(p=>polSched(p).forEach(e=>{const a=polRow(e.ix,s);if(a<2||a>rows.length)return;const r=rows[a-1];r.pay+=e.amt;if(e.kind==='lump')r.payL+=e.amt;else r.payR+=e.amt}))}
 /* payouts that fall in month m (0=Apr..11=Mar) of plan row a */
 function polMonth(s,a,m){let t=0;const ix=(m<=8?s.start+a-2:s.start+a-1)*12+(m+3)%12;(s.policies||[]).forEach(p=>polSched(p).forEach(e=>{if(e.ix===ix)t+=e.amt}));return t}
+/* Total income = interest + policy payouts. inc = the row's interest (null when there is none yet), allm = every holding has matured. */
+function polTiTxt(inc,allm,pay){const p=pay>0?pay:0;if(inc==null)return p>0?f(p):'\u2014';if(allm&&!p)return'-';return f((allm?0:inc)+p)}
+function polTiVal(inc,pay){return(inc==null?0:inc)+(pay>0?pay:0)}
 function polTotals(p){const L=polSched(p);return{count:L.filter(e=>e.kind==='payout').length,pay:L.reduce((q,e)=>q+(e.kind==='payout'?e.amt:0),0),lump:L.reduce((q,e)=>q+(e.kind==='lump'?e.amt:0),0),first:L.length?L[0].date:'',last:L.length?L[L.length-1].date:''}}
 function cleanPol(a){const out=[],seen={};(Array.isArray(a)?a:[]).forEach(x=>{if(out.length>=PMAX||!x||typeof x!=='object')return;const name=String(x.name==null?'':x.name).replace(/\s+/g,' ').trim().slice(0,40);if(!name)return;
 const st=pDate(x.start);if(!st)return;const frq=PFREQ[x.freq]?x.freq:'yearly';let id=String(x.id==null?'':x.id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);if(!id||seen[id])id='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);seen[id]=1;
@@ -2281,23 +2284,23 @@ function hin(n){if(n==null)return'—';n=Math.round(n);if(n<1)return'0';const p=
 const LK=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}),lk=n=>n==null?'—':LK.format(n/1e5);
 const sh=s=>s.replace('School · Class ','School ').replace('College · Yr ','College ').replace(' of ','/');
 function repRows(){if(UI.rv==='sav')return window.repSavRows();if(UI.rv==='int')return window.repIRows();if(UI.rv==='month')return window.repMRows();const SEL=repSel();if(SEL.none)return window.repNone();if(SEL.min){const D0=calc(S);return window.repMin(D0.rows,{label:'As on',noun:'years',yr:true,lab:r=>'1 Apr '+r.year,hl:r=>r.a-1===D0.ri})}const D=calc(S),A=S.assets,Ms=S.members,kids=Ms.map((m,i)=>m.role==='Child'?i:-1).filter(i=>i>=0),q=UI.rq.trim().toLowerCase(),nf=A.length===1||(UI.rcl&&UI.rcl.length===1);
-const key=(r,k)=>k==='a'||k[0]==='s'?r.a:k==='year'||k==='fy'?r.year:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='pay'?r.pay:(k==='int'||k==='mi')?(r.a>1?r.chg-r.add:-1e18):r.v[+k.slice(1)];
+const key=(r,k)=>k==='a'||k[0]==='s'?r.a:k==='year'||k==='fy'?r.year:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='pay'?r.pay:k==='ti'?polTiVal(r.a>1?r.chg-r.add:null,r.pay):(k==='int'||k==='mi')?(r.a>1?r.chg-r.add:-1e18):r.v[+k.slice(1)];
 const L=D.rows.filter(r=>!q||[r.a,r.year,fyl(r.year),r.age.join(' '),r.st.join(' '),r.tot,f(r.tot),hin(r.tot),rowRoiTxt(r),...r.v.map(f)].join(' ').toLowerCase().includes(q));
 L.sort((x,y)=>{const a=key(x,UI.rk),b=key(y,UI.rk);return(a>b?1:a<b?-1:0)*UI.rd});
 if(!L.length)return`<div class="em">No years match your search.</div>`;
 const th=(k,t)=>`<th aria-sort="${UI.rk===k?(UI.rd>0?'ascending':'descending'):'none'}"><button data-rk="${k}">${t}${UI.rk===k?(UI.rd>0?' ▲':' ▼'):''}</button></th>`;
 const at=r=>`data-r="${r.a}" class="${r.a-1===D.ri?'a':''}${UI.sel===r.a?' sel':''}"`;
-return`<table class="rt"><tr>${th('a','S.No')}${nf?'':th('fy','Financial<br>Year')}${th('year','As on')}${th('age','Ages<br>'+Ms.map(m=>escn(m.name)).join(' / '))}${kids.map(k=>th('s'+k,escn(Ms[k].name)+'<br>stage')).join('')}${A.map((x,i)=>th('v'+i,escn(x.name)+'<br>(₹ L)')).join('')}${th('int','Yearly<br>income (₹)')}${th('mi','Monthly<br>income (₹)')}${S.policies.length?th('pay','Policy<br>payouts (₹)'):''}${th('tot','Year end<br>balance (₹)')}${th('roi','Blended<br>ROI')}${th('add','Amount<br>Deposited (₹)')}${th('chg','Change<br>(₹ L)')}${th('hi','Total (हिन्दी)')}</tr>
-${L.map(r=>`<tr ${at(r)} tabindex="0" aria-selected="${UI.sel===r.a}"><td>${r.a}</td>${nf?'':`<td class="nw">${fyl(r.year)}</td>`}<td class="nw">1 Apr ${r.year}</td><td class="nw">${r.age.join(' / ')}</td>${kids.map(k=>`<td class="l">${sh(r.st[k])}</td>`).join('')}${r.v.map(v=>`<td title="${f(v)}">${lk(v)}</td>`).join('')}<td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</td><td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</td>${S.policies.length?`<td class="nw">${r.pay>0?f(r.pay):'—'}</td>`:''}<td class="nw" title="${f(r.tot)}"><b>${f(r.tot)}</b></td><td><b>${rowRoiTxt(r)}</b></td><td class="nw" title="${f(r.add)}">${f(r.add)}</td><td>${r.a>1?lk(r.chg):'—'}</td><td class="l">${hin(r.tot)}</td></tr>`).join('')}</table>
+return`<table class="rt"><tr>${th('a','S.No')}${nf?'':th('fy','Financial<br>Year')}${th('year','As on')}${th('age','Ages<br>'+Ms.map(m=>escn(m.name)).join(' / '))}${kids.map(k=>th('s'+k,escn(Ms[k].name)+'<br>stage')).join('')}${A.map((x,i)=>th('v'+i,escn(x.name)+'<br>(₹ L)')).join('')}${th('int','Yearly<br>income (₹)')}${th('mi','Monthly<br>income (₹)')}${S.policies.length?th('pay','Policy<br>payouts (₹)')+th('ti','Total<br>income (₹)'):''}${th('tot','Year end<br>balance (₹)')}${th('roi','Blended<br>ROI')}${th('add','Amount<br>Deposited (₹)')}${th('chg','Change<br>(₹ L)')}${th('hi','Total (हिन्दी)')}</tr>
+${L.map(r=>`<tr ${at(r)} tabindex="0" aria-selected="${UI.sel===r.a}"><td>${r.a}</td>${nf?'':`<td class="nw">${fyl(r.year)}</td>`}<td class="nw">1 Apr ${r.year}</td><td class="nw">${r.age.join(' / ')}</td>${kids.map(k=>`<td class="l">${sh(r.st[k])}</td>`).join('')}${r.v.map(v=>`<td title="${f(v)}">${lk(v)}</td>`).join('')}<td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</td><td class="nw">${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</td>${S.policies.length?`<td class="nw">${r.pay>0?f(r.pay):'—'}</td><td class="nw"><b>${polTiTxt(r.a>1?r.chg-r.add:null,r.a>1&&allMat(A.map((x,i)=>i),r,false),r.pay)}</b></td>`:''}<td class="nw" title="${f(r.tot)}"><b>${f(r.tot)}</b></td><td><b>${rowRoiTxt(r)}</b></td><td class="nw" title="${f(r.add)}">${f(r.add)}</td><td>${r.a>1?lk(r.chg):'—'}</td><td class="l">${hin(r.tot)}</td></tr>`).join('')}</table>
 <div class="rc">${L.map(r=>`<details class="yc ${r.a-1===D.ri?'a':''}${UI.sel===r.a?' sel':''}" data-r="${r.a}"><summary><b>As on 1 Apr ${r.year}</b>${nf?'':' · '+fyl(r.year)} · Age ${r.age[0]}<br><span class="mu">Year end balance</span> <b>${f(r.tot)}</b><div class="mu">${hin(r.tot)}</div></summary><div class="kv">
 ${Ms.map((m,k)=>`<span>${escn(m.name)}</span><b>Age ${r.age[k]}${m.role==='Child'?' · '+sh(r.st[k]):''}</b>`).join('')}
-${A.map((x,i)=>`<span>${escn(x.name)}</span><b>${f(r.v[i])}</b>`).join('')}<span>Blended ROI</span><b>${rowRoiTxt(r)}</b><span>Yearly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</b><span>Monthly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</b>${S.policies.length?'<span>Policy payouts</span><b>'+(r.pay>0?f(r.pay):'—')+'</b>':''}<span>Amount deposited</span><b>${f(r.add)}</b><span>Yearly change</span><b>${r.a>1?f(r.chg):'—'}</b></div></details>`).join('')}</div>`}
+${A.map((x,i)=>`<span>${escn(x.name)}</span><b>${f(r.v[i])}</b>`).join('')}<span>Blended ROI</span><b>${rowRoiTxt(r)}</b><span>Yearly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f(r.chg-r.add)):'—'}</b><span>Monthly income</span><b>${r.a>1?(allMat(A.map((x,i)=>i),r,false)?'-':f((r.chg-r.add)/12)):'—'}</b>${S.policies.length?'<span>Policy payouts</span><b>'+(r.pay>0?f(r.pay):'—')+'</b><span>Total income</span><b>'+polTiTxt(r.a>1?r.chg-r.add:null,r.a>1&&allMat(A.map((x,i)=>i),r,false),r.pay)+'</b>':''}<span>Amount deposited</span><b>${f(r.add)}</b><span>Yearly change</span><b>${r.a>1?f(r.chg):'—'}</b></div></details>`).join('')}</div>`}
 function rep(){const MV=UI.rv==='month',IV=UI.rv==='int',A=S.assets,yr=x=>x.yrs;
 if(UI.rv==='clients'&&window.gppClients)return gppClients();
 if(UI.rv==='ent'&&window.repEnt)return window.repEnt();
 if(!A.length)return gpEmpty();
 if(UI.rv==='sav'&&window.repSav)return window.repSav();
-const SEL=repSel(),so=IV?window.repISort():SEL.min?[['a','S.No'],['year',MV?'Month':'As on'],...SEL.idx.map(i=>['v'+i,A[i].name]),...(MV?[['tot','Month end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Interest earned']]:[['age','Age'],['tot','Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Yearly income'],['mi','Monthly income'],['chg','Yearly change']])]:[['a','S.No'],['year',MV?'Month':'As on'],['age','Age'],['tot',MV?'Month end balance':'Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int',MV?'Interest earned':'Yearly income'],...(MV?[]:[['mi','Monthly income']]),...(S.policies.length?[['pay',MV?'Policy payout':'Policy payouts']]:[]),['chg',MV?'Monthly change':'Yearly change'],...A.map((x,i)=>['v'+i,x.name])];
+const SEL=repSel(),so=IV?window.repISort():SEL.min?[['a','S.No'],['year',MV?'Month':'As on'],...SEL.idx.map(i=>['v'+i,A[i].name]),...(MV?[['tot','Month end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Interest earned']]:[['age','Age'],['tot','Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int','Yearly income'],['mi','Monthly income'],['chg','Yearly change']])]:[['a','S.No'],['year',MV?'Month':'As on'],['age','Age'],['tot',MV?'Month end balance':'Year end balance'],['roi','Blended ROI'],['add','Amount deposited'],['int',MV?'Interest earned':'Yearly income'],...(MV?[]:[['mi','Monthly income']]),...(S.policies.length?[['pay',MV?'Policy payout':'Policy payouts'],['ti','Total income']]:[]),['chg',MV?'Monthly change':'Yearly change'],...A.map((x,i)=>['v'+i,x.name])];
 return`<div class="rph"><div><h1>${IV?'Year-by-Year Interest &amp; Monthly Income':MV?'Month-by-Month Financial Forecast':'Year-by-Year Financial Forecast'}</h1><div class="rpf">${IV?'Interest = Closing Balance − Opening Balance − Additions · Monthly Income = Interest ÷ 12':'Formula: Closing Balance = (Previous Closing × (1 + Return)) + Yearly Additions'}</div></div><div class="rpr">${rvTog()}</div></div>
 
 <div class="card"><div class="rph2"><h2>${IV?'Interest &amp; monthly income table':'Forecast table'}</h2><button id="csv">Copy as CSV</button></div>
@@ -2511,7 +2514,7 @@ M.addEventListener('click',e=>{const rw=e.target.closest('[data-r]');if(rw&&!e.t
 if(d.pal){S.palette=d.pal;save();theme();render();toast((PALS.find(x=>x[0]===d.pal)||[0,d.pal])[1]+' theme applied')}else if(b.id==='rm'||b.id==='rp')stepRet(b.id==='rp'?1:-1);else if(b.id==='fadd')mform();else if(d.me!=null)mform(+d.me);else if(d.mx!=null){const m=S.members[+d.mx];confirmBox(`Remove “${escn(m.name)}” from the family?`,()=>{const u=undoer();S.members.splice(+d.mx,1);save();render();toast('Member removed',u)})}else if(d.fk){UI.fd=UI.fk===d.fk?-UI.fd:1;UI.fk=d.fk;const s=$('#fsf');if(s)s.value=UI.fk;$('#fr').innerHTML=famRows()}else if(b.id==='fsd'){UI.fd=-UI.fd;b.textContent=UI.fd>0?'▲':'▼';$('#fr').innerHTML=famRows()}else if(b.id==='add')form();else if(d.e!=null){window.__openNotes=!!d.nt;form(+d.e)}
 else if(d.go){UI.tab=d.go;render();window.scrollTo(0,0)}else if(d.x!=null){const x=S.assets[+d.x];confirmBox(`Delete “${escn(x.name)}”? This cannot be undone.`,()=>{const u=undoer();S.assets.splice(+d.x,1);save();render();toast('Holding deleted',u)})}
 else if(d.k){UI.d=UI.k===d.k?-UI.d:1;UI.k=d.k;const s=$('#sf');if(s)s.value=UI.k;$('#hr').innerHTML=holdRows()}else if(d.rk){UI.rd=UI.rk===d.rk?-UI.rd:1;UI.rk=d.rk;const s=$('#rsf');if(s)s.value=UI.rk;$('#rr').innerHTML=repRows()}else if(b.id==='rsd'){UI.rd=-UI.rd;b.textContent=UI.rd>0?'▲':'▼';$('#rr').innerHTML=repRows()}else if(b.id==='sd'){UI.d=-UI.d;b.textContent=UI.d>0?'▲':'▼';$('#hr').innerHTML=holdRows()}
-else if(b.id==='csv'){if(UI.rv==='int'){if(repSel().none){toast('Please select at least one investment.');return}text('Interest & monthly income CSV',window.intCSV());return}const SL=repSel();if(SL.none){toast('Please select at least one investment.');return}if(SL.min){text(UI.rv==='month'?'Month-by-month forecast CSV':'Forecast CSV',window.repSelCSV());return}if(UI.rv==='month'){text('Month-by-month forecast CSV',window.monthCSV());return}const D=calc(S),q=v=>'"'+String(v).replace(/"/g,'""')+'"',A=S.assets,Ms=S.members,kids=Ms.map((m,i)=>m.role==='Child'?i:-1).filter(i=>i>=0);text('Forecast CSV',[['S.No','As on',...Ms.map(m=>'Age ('+m.name+')'),...kids.map(k=>Ms[k].name+' Stage'),...A.map(x=>x.name),'Year end balance','Blended ROI %','Amount deposited','Interest earned (yearly income)','Monthly income','Yearly change','Total (Hindi)'].map(q).join(',')].concat(D.rows.map(r=>[r.a,q('1 Apr '+r.year),...r.age,...kids.map(k=>q(r.st[k])),...r.v.map(Math.round),r.tot,rowRoiPct(r),Math.round(r.add),r.a>1?Math.round(r.chg-r.add):'—',r.a>1?Math.round((r.chg-r.add)/12):'—',r.chg,q(hin(r.tot))].join(','))).join('\n'))}
+else if(b.id==='csv'){if(UI.rv==='int'){if(repSel().none){toast('Please select at least one investment.');return}text('Interest & monthly income CSV',window.intCSV());return}const SL=repSel();if(SL.none){toast('Please select at least one investment.');return}if(SL.min){text(UI.rv==='month'?'Month-by-month forecast CSV':'Forecast CSV',window.repSelCSV());return}if(UI.rv==='month'){text('Month-by-month forecast CSV',window.monthCSV());return}const D=calc(S),q=v=>'"'+String(v).replace(/"/g,'""')+'"',A=S.assets,Ms=S.members,kids=Ms.map((m,i)=>m.role==='Child'?i:-1).filter(i=>i>=0);text('Forecast CSV',[['S.No','As on',...Ms.map(m=>'Age ('+m.name+')'),...kids.map(k=>Ms[k].name+' Stage'),...A.map(x=>x.name),'Year end balance','Blended ROI %','Amount deposited','Interest earned (yearly income)','Monthly income',...(S.policies.length?['Policy payouts','Total income']:[]),'Yearly change','Total (Hindi)'].map(q).join(',')].concat(D.rows.map(r=>[r.a,q('1 Apr '+r.year),...r.age,...kids.map(k=>q(r.st[k])),...r.v.map(Math.round),r.tot,rowRoiPct(r),Math.round(r.add),r.a>1?Math.round(r.chg-r.add):'—',r.a>1?Math.round((r.chg-r.add)/12):'—',...(S.policies.length?[Math.round(r.pay),Math.round(polTiVal(r.a>1?r.chg-r.add:null,r.pay))]:[]),r.chg,q(hin(r.tot))].join(','))).join('\n'))}
 else if(b.id==='ex')text('Backup (copy and keep safe)',JSON.stringify(S,null,1));
 else if(b.id==='im')text('Paste backup to import','',t=>{const u=undoer();S=clean(JSON.parse(t));save();render();toast('Backup imported',u)});
 else if(b.id==='clr')confirmBox('Clear ALL data? This removes every holding and your family names. It cannot be undone.',()=>{const u=undoer(),lg=S.lang;S=DEF();S.lang=lg;S.assets=[];S.members=[MB(1,'Self','Self',DEF().members[0].age)];S.grat={basic:0,svc:0,rem:0,cap:0};save();UI.q='';UI.cat='All';UI.hc=null;render();toast('All data cleared',u)});
@@ -2765,18 +2768,18 @@ rows.push({a:(a-2)*12+m,year:c.year,mi:m-1,label:MN[cm]+' '+cy,age:c.age,st:c.st
 return{rows:rows,D:D}};
 window.rvTog=function(){return'<div class="seg" role="group" aria-label="Report type" style="margin-bottom:14px">'+[['clients','Clients'],['year','Yearly View'],['month','Monthly View'],['int','Interest & Income'],['sav','Yearly Savings'],['ent','Entry Dates']].map(function(k){return'<button type="button" data-rv="'+k[0]+'" aria-pressed="'+((UI.rv||'year')===k[0])+'">'+k[1]+'</button>'}).join('')+'</div>'};
 window.repMRows=function(){const S0=repSel();if(S0.none)return window.repNone();if(S0.min){const m0=monthData(),ry0=m0.D.rows[m0.D.ri].year;return window.repMin(m0.rows,{label:'Month',noun:'months',lab:r=>r.label,hl:r=>r.year===ry0&&r.mi===11})}const md=monthData(),D=md.D,A=S.assets,Ms=S.members,kids=Ms.map(function(m,i){return m.role==='Child'?i:-1}).filter(function(i){return i>=0}),q=UI.rq.trim().toLowerCase(),ry=D.rows[D.ri].year,nf=A.length===1||(UI.rcl&&UI.rcl.length===1);
-const key=function(r,k){return k==='a'||k==='year'||k==='fy'||k[0]==='s'?r.a:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='pay'?r.pay:k==='int'?(r.chg==null?-1e18:r.chg-r.add):r.v[+k.slice(1)]};
+const key=function(r,k){return k==='a'||k==='year'||k==='fy'||k[0]==='s'?r.a:k==='age'?r.age[0]:k==='tot'||k==='hi'?r.tot:k==='roi'?(rowRoi(r)||0):k==='chg'?r.chg:k==='add'?r.add:k==='pay'?r.pay:k==='ti'?polTiVal(r.chg==null?null:r.chg-r.add,r.pay):k==='int'?(r.chg==null?-1e18:r.chg-r.add):r.v[+k.slice(1)]};
 const L=md.rows.filter(function(r){return!q||[r.a,r.label,fyl(r.year),r.age.join(' '),r.st.join(' '),r.tot,f(r.tot),hin(r.tot),rowRoiTxt(r)].concat(r.v.map(f)).join(' ').toLowerCase().indexOf(q)>-1});
 L.sort(function(x,y){const a=key(x,UI.rk),b=key(y,UI.rk);return(a>b?1:a<b?-1:0)*UI.rd});
 if(!L.length)return'<div class="em">No months match your search.</div>';
 const th=function(k,t){return'<th aria-sort="'+(UI.rk===k?(UI.rd>0?'ascending':'descending'):'none')+'"><button data-rk="'+k+'">'+t+(UI.rk===k?(UI.rd>0?' ▲':' ▼'):'')+'</button></th>'};
 const at=function(r){return'data-r="'+r.a+'" class="'+(r.year===ry&&r.mi===11?'a':'')+(UI.sel===r.a?' sel':'')+'"'};
-return'<table class="rt"><tr>'+th('a','S.No')+(nf?'':th('fy','Financial<br>Year'))+th('year','Month')+th('age','Ages<br>'+Ms.map(function(m){return escn(m.name)}).join(' / '))+kids.map(function(k){return th('s'+k,escn(Ms[k].name)+'<br>stage')}).join('')+A.map(function(x,i){return th('v'+i,escn(x.name)+'<br>(₹ L)')}).join('')+th('tot','Month end<br>balance (₹)')+th('roi','Blended<br>ROI')+th('add','Amount<br>Deposited (₹)')+th('int','Interest<br>Earned (₹)')+(S.policies.length?th('pay','Policy<br>payout (₹)'):'')+th('chg','Change<br>(₹ L)')+th('hi','Total (हिन्दी)')+'</tr>'
-+L.map(function(r){return'<tr '+at(r)+' tabindex="0" aria-selected="'+(UI.sel===r.a)+'"><td>'+r.a+'</td>'+(nf?'':'<td class="nw">'+fyl(r.year)+'</td>')+'<td class="nw">'+r.label+'</td><td class="nw">'+r.age.join(' / ')+'</td>'+kids.map(function(k){return'<td class="l">'+sh(r.st[k])+'</td>'}).join('')+r.v.map(function(v,i){if(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&v!=null&&r.dep&&!r.dep[i])return'<td>-</td>';return'<td title="'+f(v)+'">'+lk(v)+'</td>'}).join('')+'<td class="nw" title="'+f(r.tot)+'"><b>'+f(r.tot)+'</b></td><td><b>'+rowRoiTxt(r)+'</b></td><td class="nw" title="'+f(r.add)+'">'+f(r.add)+'</td><td class="nw">'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</td>'+(S.policies.length?'<td class="nw">'+(r.pay>0?f(r.pay):'—')+'</td>':'')+'<td>'+lk(r.chg)+'</td><td class="l">'+hin(r.tot)+'</td></tr>'}).join('')+'</table>'
-+'<div class="rc">'+L.map(function(r){return'<details class="yc '+(r.year===ry&&r.mi===11?'a':'')+(UI.sel===r.a?' sel':'')+'" data-r="'+r.a+'"><summary><b>'+r.label+'</b>'+(nf?'':' · '+fyl(r.year))+' · Age '+r.age[0]+'<br><span class="mu">Month end balance</span> <b>'+f(r.tot)+'</b><div class="mu">'+hin(r.tot)+'</div></summary><div class="kv">'+Ms.map(function(m,k){return'<span>'+escn(m.name)+'</span><b>Age '+r.age[k]+(m.role==='Child'?' · '+sh(r.st[k]):'')+'</b>'}).join('')+A.map(function(x,i){return'<span>'+escn(x.name)+'</span><b>'+(x.cmp==='oa'&&x.type!=='gratuity'&&r.v[i]!=null&&r.dep&&!r.dep[i]?'-':f(r.v[i]))+'</b>'}).join('')+'<span>Blended ROI</span><b>'+rowRoiTxt(r)+'</b><span>Amount deposited</span><b>'+f(r.add)+'</b><span>Interest earned</span><b>'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</b>'+(S.policies.length?'<span>Policy payout</span><b>'+(r.pay>0?f(r.pay):'—')+'</b>':'')+'<span>Monthly change</span><b>'+f(r.chg)+'</b></div></details>'}).join('')+'</div>'
+return'<table class="rt"><tr>'+th('a','S.No')+(nf?'':th('fy','Financial<br>Year'))+th('year','Month')+th('age','Ages<br>'+Ms.map(function(m){return escn(m.name)}).join(' / '))+kids.map(function(k){return th('s'+k,escn(Ms[k].name)+'<br>stage')}).join('')+A.map(function(x,i){return th('v'+i,escn(x.name)+'<br>(₹ L)')}).join('')+th('tot','Month end<br>balance (₹)')+th('roi','Blended<br>ROI')+th('add','Amount<br>Deposited (₹)')+th('int','Interest<br>Earned (₹)')+(S.policies.length?th('pay','Policy<br>payout (₹)')+th('ti','Total<br>income (₹)'):'')+th('chg','Change<br>(₹ L)')+th('hi','Total (हिन्दी)')+'</tr>'
++L.map(function(r){return'<tr '+at(r)+' tabindex="0" aria-selected="'+(UI.sel===r.a)+'"><td>'+r.a+'</td>'+(nf?'':'<td class="nw">'+fyl(r.year)+'</td>')+'<td class="nw">'+r.label+'</td><td class="nw">'+r.age.join(' / ')+'</td>'+kids.map(function(k){return'<td class="l">'+sh(r.st[k])+'</td>'}).join('')+r.v.map(function(v,i){if(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&v!=null&&r.dep&&!r.dep[i])return'<td>-</td>';return'<td title="'+f(v)+'">'+lk(v)+'</td>'}).join('')+'<td class="nw" title="'+f(r.tot)+'"><b>'+f(r.tot)+'</b></td><td><b>'+rowRoiTxt(r)+'</b></td><td class="nw" title="'+f(r.add)+'">'+f(r.add)+'</td><td class="nw">'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</td>'+(S.policies.length?'<td class="nw">'+(r.pay>0?f(r.pay):'—')+'</td><td class="nw"><b>'+polTiTxt(r.chg==null?null:r.chg-r.add,r.chg!=null&&allMat(A.map(function(x,i){return i}),r,true),r.pay)+'</b></td>':'')+'<td>'+lk(r.chg)+'</td><td class="l">'+hin(r.tot)+'</td></tr>'}).join('')+'</table>'
++'<div class="rc">'+L.map(function(r){return'<details class="yc '+(r.year===ry&&r.mi===11?'a':'')+(UI.sel===r.a?' sel':'')+'" data-r="'+r.a+'"><summary><b>'+r.label+'</b>'+(nf?'':' · '+fyl(r.year))+' · Age '+r.age[0]+'<br><span class="mu">Month end balance</span> <b>'+f(r.tot)+'</b><div class="mu">'+hin(r.tot)+'</div></summary><div class="kv">'+Ms.map(function(m,k){return'<span>'+escn(m.name)+'</span><b>Age '+r.age[k]+(m.role==='Child'?' · '+sh(r.st[k]):'')+'</b>'}).join('')+A.map(function(x,i){return'<span>'+escn(x.name)+'</span><b>'+(x.cmp==='oa'&&x.type!=='gratuity'&&r.v[i]!=null&&r.dep&&!r.dep[i]?'-':f(r.v[i]))+'</b>'}).join('')+'<span>Blended ROI</span><b>'+rowRoiTxt(r)+'</b><span>Amount deposited</span><b>'+f(r.add)+'</b><span>Interest earned</span><b>'+(r.chg==null?'—':(allMat(A.map(function(x,i){return i}),r,true)?'-':f(r.chg-r.add)))+'</b>'+(S.policies.length?'<span>Policy payout</span><b>'+(r.pay>0?f(r.pay):'—')+'</b><span>Total income</span><b>'+polTiTxt(r.chg==null?null:r.chg-r.add,r.chg!=null&&allMat(A.map(function(x,i){return i}),r,true),r.pay)+'</b>':'')+'<span>Monthly change</span><b>'+f(r.chg)+'</b></div></details>'}).join('')+'</div>'
 };
 window.monthCSV=function(){const q=function(v){return'"'+String(v).replace(/"/g,'""')+'"'},md=monthData(),A=S.assets,Ms=S.members,kids=Ms.map(function(m,i){return m.role==='Child'?i:-1}).filter(function(i){return i>=0});
-return[['S.No','Month','Year'].concat(Ms.map(function(m){return'Age ('+m.name+')'}),kids.map(function(k){return Ms[k].name+' Stage'}),A.map(function(x){return x.name}),['Month end balance','Blended ROI %','Amount deposited','Interest earned'].concat(S.policies.length?['Policy payout']:[],['Monthly change','Total (Hindi)'])).map(q).join(',')].concat(md.rows.map(function(r){return[r.a,r.label.split(' ')[0],r.label.split(' ')[1]].concat(r.age,kids.map(function(k){return q(r.st[k])}),r.v.map(function(x,i){return x==null?'—':(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&r.dep&&!r.dep[i]?'-':Math.round(x))}),[r.tot==null?'—':r.tot,r.tot==null?'—':rowRoiPct(r),Math.round(r.add),r.chg==null?'—':Math.round(r.chg-r.add)].concat(S.policies.length?[Math.round(r.pay)]:[],[r.chg==null?'—':r.chg,q(hin(r.tot))])).join(',')})).join('\n')};
+return[['S.No','Month','Year'].concat(Ms.map(function(m){return'Age ('+m.name+')'}),kids.map(function(k){return Ms[k].name+' Stage'}),A.map(function(x){return x.name}),['Month end balance','Blended ROI %','Amount deposited','Interest earned'].concat(S.policies.length?['Policy payout','Total income']:[],['Monthly change','Total (Hindi)'])).map(q).join(',')].concat(md.rows.map(function(r){return[r.a,r.label.split(' ')[0],r.label.split(' ')[1]].concat(r.age,kids.map(function(k){return q(r.st[k])}),r.v.map(function(x,i){return x==null?'—':(A[i].cmp==='oa'&&A[i].type!=='gratuity'&&r.dep&&!r.dep[i]?'-':Math.round(x))}),[r.tot==null?'—':r.tot,r.tot==null?'—':rowRoiPct(r),Math.round(r.add),r.chg==null?'—':Math.round(r.chg-r.add)].concat(S.policies.length?[Math.round(r.pay),Math.round(polTiVal(r.chg==null?null:r.chg-r.add,r.pay))]:[],[r.chg==null?'—':r.chg,q(hin(r.tot))])).join(',')})).join('\n')};
 document.addEventListener('click',function(e){const b=e.target.closest&&e.target.closest('[data-rv]');if(!b)return;
 UI.rv=b.dataset.rv;UI.sel=null;UI.rk='a';UI.rd=1;UI.rq='';render()});
 })();</script>
@@ -3559,17 +3562,17 @@ html body .msd-i input{width:18px;height:18px;min-height:0;flex:none;margin:0}
 <script>/* Report columns: three tiers per report (fixed / defaultVisible / optional). One saved choice per report type, shared by Reports, the holding popup and Settings. */
 (function(){
 var CFG={
-year:{fixed:['year','v','tot'],defaultVisible:['age','int','mi','roi','add'],optional:['a','chg','hi','fy','s']},
-month:{fixed:['year','v','tot'],defaultVisible:['age','roi','add','int'],optional:['a','chg','hi','fy','s']},
-int:{fixed:['year','open','close'],defaultVisible:['add','v','int','mi','roi'],optional:['a','age']}};
+year:{fixed:['year','v','tot'],defaultVisible:['age','int','mi','pay','ti','roi','add'],optional:['a','chg','hi','fy','s']},
+month:{fixed:['year','v','tot'],defaultVisible:['age','roi','add','int','pay','ti'],optional:['a','chg','hi','fy','s']},
+int:{fixed:['year','open','close'],defaultVisible:['add','v','int','mi','pay','ti','roi'],optional:['a','age']}};
 var LAB={
-year:{year:'Year (as on)',v:"Holding\u2019s value (\u20b9 L)",tot:'Year end balance',age:'Ages',int:'Yearly income',mi:'Monthly income',roi:'Blended ROI',add:'Amount deposited',a:'S.No',chg:'Change (\u20b9 L)',hi:'Total (\u0939\u093f\u0928\u094d\u0926\u0940)',fy:'Financial year',s:'Child stage columns'},
-month:{year:'Month',v:"Holding\u2019s value (\u20b9 L)",tot:'Month end balance',age:'Ages',roi:'Blended ROI',add:'Amount deposited',int:'Interest earned',a:'S.No',chg:'Change (\u20b9 L)',hi:'Total (\u0939\u093f\u0928\u094d\u0926\u0940)',fy:'Financial year',s:'Child stage columns'},
-int:{year:'Financial year',open:'Opening balance',close:'Closing balance',add:'Additions',v:"Holding\u2019s interest",int:'Interest earned',mi:'Monthly income',roi:'Yield on opening',a:'S.No',age:'Age'}};
+year:{year:'Year (as on)',v:"Holding\u2019s value (\u20b9 L)",tot:'Year end balance',age:'Ages',int:'Yearly income',mi:'Monthly income',pay:'Policy payouts',ti:'Total income',roi:'Blended ROI',add:'Amount deposited',a:'S.No',chg:'Change (\u20b9 L)',hi:'Total (\u0939\u093f\u0928\u094d\u0926\u0940)',fy:'Financial year',s:'Child stage columns'},
+month:{year:'Month',v:"Holding\u2019s value (\u20b9 L)",tot:'Month end balance',age:'Ages',roi:'Blended ROI',add:'Amount deposited',int:'Interest earned',pay:'Policy payout',ti:'Total income',a:'S.No',chg:'Change (\u20b9 L)',hi:'Total (\u0939\u093f\u0928\u094d\u0926\u0940)',fy:'Financial year',s:'Child stage columns'},
+int:{year:'Financial year',open:'Opening balance',close:'Closing balance',add:'Additions',v:"Holding\u2019s interest",int:'Interest earned',mi:'Monthly income',pay:'Policy payouts',ti:'Total income',roi:'Yield on opening',a:'S.No',age:'Age'}};
 var NAME={year:'Yearly View',month:'Monthly View',int:'Interest & Income'};
-var CL={year:{'Blended ROI':'roi','Yearly income':'int','Monthly income':'mi','Amount deposited':'add','Yearly change':'chg'},
-month:{'Blended ROI':'roi','Amount deposited':'add','Interest earned':'int','Monthly change':'chg'},
-int:{'Opening balance':'open','Additions':'add','Interest earned':'int','Monthly income':'mi','Yield on opening':'roi','Closing balance':'close'}};
+var CL={year:{'Blended ROI':'roi','Yearly income':'int','Monthly income':'mi','Policy payouts':'pay','Total income':'ti','Amount deposited':'add','Yearly change':'chg'},
+month:{'Blended ROI':'roi','Amount deposited':'add','Interest earned':'int','Policy payout':'pay','Total income':'ti','Monthly change':'chg'},
+int:{'Opening balance':'open','Additions':'add','Interest earned':'int','Monthly income':'mi','Policy payouts':'pay','Total income':'ti','Yield on opening':'roi','Closing balance':'close'}};
 var CK='fwt4-cols'+(window.__UK?'-'+window.__UK:''),P={};
 try{P=JSON.parse(localStorage.getItem(CK)||'{}')||{}}catch(e){P={}}
 var view=function(){return UI.rv||'year'};
@@ -3580,7 +3583,8 @@ function vis(v,k){var g=grp(k),t=tier(v,g);if(t==='fixed'||t==='other')return tr
 function setPref(v,g,on){var t=tier(v,g);if(t==='fixed'||t==='other')return;P[v]=P[v]||{};if(on===(t==='dv'))delete P[v][g];else P[v][g]=on;if(!Object.keys(P[v]).length)delete P[v];persist()}
 function reset(v){delete P[v];persist()}
 function showAll(v){P[v]={};CFG[v].defaultVisible.concat(CFG[v].optional).forEach(function(g){setPref(v,g,true)});persist()}
-function groups(v){var c=CFG[v];return c.fixed.concat(c.defaultVisible,c.optional)}
+function hasPol(g){return(g!=='pay'&&g!=='ti')||(typeof S!=='undefined'&&S&&S.policies&&S.policies.length>0)}
+function groups(v){var c=CFG[v];return c.fixed.concat(c.defaultVisible,c.optional).filter(hasPol)}
 /* remove hidden columns from a report table and its phone cards (idempotent per rendered table) */
 function apply(root,v){
 if(!root||!CFG[v])return;
@@ -3626,7 +3630,7 @@ return'<div class="card" id="rcset"><h2>Report columns</h2><p class="mu">Choose 
 +Object.keys(CFG).map(function(v){var lab=LAB[v];
 return'<div class="sub2">'+NAME[v]+' <span class="mu" data-rcst="'+v+'">'+(P[v]?'Customised':'Default')+'</span></div>'
 +'<div class="rcs-f"><span class="mu">Always shown \ud83d\udd12</span>'+CFG[v].fixed.map(function(g){return'<span class="rcs-chip">'+esc(lab[g])+'</span>'}).join('')+'</div>'
-+'<div class="rcs-g">'+CFG[v].defaultVisible.concat(CFG[v].optional).map(function(g){var t=tier(v,g);
++'<div class="rcs-g">'+CFG[v].defaultVisible.concat(CFG[v].optional).filter(hasPol).map(function(g){var t=tier(v,g);
 return'<label class="rcs-i"><input type="checkbox" data-rcs="'+v+':'+g+'"'+(vis(v,g)?' checked':'')+'><span>'+esc(lab[g])+'</span><em>'+(t==='dv'?'on by default':'off by default')+'</em></label>'}).join('')+'</div>'
 +'<div class="acts"><button type="button" data-rcreset="'+v+'">Reset '+NAME[v].toLowerCase()+' to default</button></div>'}).join('')+'</div>'};
 window.RCOLS={apply:apply,vis:vis,cfg:CFG};
@@ -4592,9 +4596,24 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
   }
   /* Fixed-rupee income registered by the host page (insurance policy payouts): { k, name, byYear: {calendarYear: rupees}, fromY, toY }.
      Not inflated (a policy pays the same rupees). Absent unless the page registers root.__vrExtraStreams, so the engine stays pure on its own. */
+  let noExtra = false;   // set only inside withoutPolicy(), to measure what the payouts are worth
   function extraStreams(cy) {
+    if (noExtra) return [];
     try { const x = typeof root.__vrExtraStreams === "function" ? root.__vrExtraStreams(cy) : []; return Array.isArray(x) ? x : []; } catch (e) { return []; }
   }
+  /* Policy payouts as the planner counts them: fixed rupees by calendar year, from next year on */
+  const policyStreams = () => extraStreams(nowYear());
+  const policyNow = () => { const cy = nowYear(); return extraStreams(cy).reduce((t, s) => t + ((s.byYear && s.byYear[cy + 1]) || 0), 0); };
+  /* What the policy payouts still to come are worth, brought back to `yrs` plan years from now at the plan's return (same timing as the
+     income in simulate(): the payout of calendar year cy + n is discounted n years). yrs = 0 is today. Counted once: in the corpus here,
+     and as the income that pays the household bills, which is the same money, so the surplus does not change. */
+  function policyValue(inp, yrs) {
+    const cy = nowYear(), rate = num(inp, "roi") / 100, k = yrs || 0;
+    let t = 0;
+    for (const s of extraStreams(cy)) for (const y of Object.keys(s.byYear || {})) { const d = Number(y) - cy - k; if (d > 0) t += s.byYear[y] / (1 + rate) ** d; }
+    return Number.isFinite(t) ? t : 0;
+  }
+  const withoutPolicy = fn => { const o = noExtra; noExtra = true; try { return fn(); } finally { noExtra = o; } };
   const incomeLabel = (s, all) => s.name ? s.name + " income" : all.length > 1 ? "Income source " + s.k : "Other income";
   function incomeEvents(streams, year, years, cy) {
     const ev = [];
@@ -4654,7 +4673,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
      Row y (1..years): spending parts, other income, reserve interest, the pool (P) and the savings fund (S). */
   function simulate(inp, noEarn) {
     const years = num(inp, "until") - num(inp, "age"), rate = num(inp, "roi") / 100, reserve = num(inp, "buffer"), kids = childCount(inp);
-    const cy = nowYear(), streams = incomeStreams(inp).concat(extraStreams(cy));
+    const cy = nowYear(), extra = extraStreams(cy), streams = incomeStreams(inp).concat(extra);
     const R = noEarn ? 0 : earningYears(inp), E = R ? num(inp, "preEarn") : 0, g = R ? num(inp, "preRoi") / 100 : 0, age = num(inp, "age");
     let P = num(inp, "corpus") - reserve, S = 0;
     const today = []; let todayTotal = 0;
@@ -4663,7 +4682,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
     for (let year = 1; year <= years; year++) {
       const reduction = age + year > num(inp, "reduceAge") ? 1 - num(inp, "reducePercent") / 100 : 1;
       const house = 12 * num(inp, "monthly") * (1 + num(inp, "houseInflation") / 100) ** (year - 1 + FIRST_YEAR_INFLATION) * reduction;
-      const income = incomeIn(streams, year, cy);
+      const income = incomeIn(streams, year, cy), policy = incomeIn(extra, year, cy);   // policy = the part of income that is policy payouts
       const reserveYield = reserve * num(inp, "bufferRoi") / 100;
       const fee = new Array(kids + 1).fill(0), wed = new Array(kids + 1).fill(0);
       for (let c = 1; c <= kids; c++) {
@@ -4682,7 +4701,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
       let merged = 0;
       if (R > 0 && year === R) { merged = endS; P += endS; endS = 0; }
       S = endS;
-      rows.push({ y: year, age: age + year, earning, house, fee, wed, O, income, reserveYield, earn, used, draw, startP, interestP, endP: P,
+      rows.push({ y: year, age: age + year, earning, house, fee, wed, O, income, policy, reserveYield, earn, used, draw, startP, interestP, endP: P,
         startS, interestS, endS: earning && merged ? merged : endS, merged, total: P + S, reduction });
     }
     return { rows, startPool, today, todayTotal, R, reserve };
@@ -4767,6 +4786,8 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
     for (let c = 1; c <= kids; c++) out.push({ name: `Child ${c} · education`, value: edu[c] }, { name: `Child ${c} · wedding`, value: wed[c] });
     out.push({ name: "Emergency reserve", value: reserve }, { name: "Growth engine", value: grow });
     if (sav > 0) out.push({ name: "Earnings savings fund", value: sav });
+    const polV = policyValue(inp, years);   // payouts still to come at that age (the ones already received sit in Household)
+    if (polV > 0.5) out.push({ name: "Policy payouts", value: polV });
     return out;
   }
 
@@ -4789,7 +4810,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
     }
     if (sim.todayTotal > 0 && ev0.length) {
       rows.push(Object.assign({ today: true, year: currentYear, age, phase: phase0, what: ev0.join(" · "), monthly: 0, house: 0, fee: zero(), wed: wed0, spent: sim.todayTotal,
-        start: pool + sim.todayTotal, interest: 0, reserveInterest: 0, income: 0, moneyIn: 0, end: pool, status: status(pool) }, base, { fromCorpus: sim.todayTotal }));
+        start: pool + sim.todayTotal, interest: 0, reserveInterest: 0, income: 0, policy: 0, moneyIn: 0, end: pool, status: status(pool) }, base, { fromCorpus: sim.todayTotal }));
     }
     for (const r of sim.rows) {
       const ev = [];
@@ -4808,7 +4829,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
       if (r.y === years) ev.push("Last year of the plan");
       const plain = ev.length === 1 && r.earning ? ev[0] : ev.length ? ev.join(" · ") : "Regular year";
       rows.push({ today: false, year: currentYear + r.y, age: r.age, phase: r.earning ? "Earning" : "Retired", what: plain, monthly: r.house / 12, house: r.house,
-        fee: r.fee, wed: r.wed, spent: r.O, start: r.startP, interest, reserveInterest: r.reserveYield, income: r.income, moneyIn, end: r.endP, status: st,
+        fee: r.fee, wed: r.wed, spent: r.O, start: r.startP, interest, reserveInterest: r.reserveYield, income: r.income, policy: r.policy, moneyIn, end: r.endP, status: st,
         earn: r.earn, netSaved: r.earning ? r.earn - r.O : 0, startS: r.startS, interestS: r.interestS, endS: r.merged ? r.merged : r.endS, merged: r.merged,
         paidByEarn: r.used, fromCorpus: r.draw });
     }
@@ -4844,10 +4865,12 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
         { name: `Child ${c} · wedding (${currentYear + num(inp, "weddingYears" + c)})`,
           setAside: num(inp, "weddingFund" + c), needed: weddingCost(inp, c).present });
     }
+    const polPV = policyValue(inp, 0);
+    if (polPV > 0.5) rows.push({ name: "Policy payouts, value today", setAside: polPV, needed: polPV, policy: true });
     rows.push({ name: "Emergency reserve, net", setAside: num(inp, "buffer"), needed: est.reservePV },
       { name: "Growth engine · unallocated", setAside: growthEngine(inp), needed: 0 });
     const needed = rows.reduce((s, r) => s + r.needed, 0);
-    const available = num(inp, "corpus");
+    const available = num(inp, "corpus") + polPV;   // corpus plus the policy payouts still to come, valued today
     const surplus = available - needed;
     if (![needed, available, surplus].every(Number.isFinite))
       return { ok: false, issues: [], status: "Please check unusually large inputs." };
@@ -4858,10 +4881,11 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
       `Over ${until - num(inp, "age")} years, the estimated need today is ${currency(needed)}. ` +
       `With ${currency(available)} available, this is ${surplus >= 0 ? "a surplus" : "a shortfall"} of ` +
       `${currency(Math.abs(surplus))}. The growth engine is ${currency(growthEngine(inp))} of your existing corpus. ` +
+      (polPV > 0.5 ? `The corpus includes ${currency(polPV)} for policy payouts still to come. ` : "") +
       (est.runout === null
         ? `The modeled spendable money remains positive through age ${until}.`
         : `The modeled spendable balance first turns negative around age ${est.runout}.`);
-    return { ok: true, issues: [], status: "", needed, available, surplus,
+    return { ok: true, issues: [], status: "", needed, available, surplus, policyPV: polPV > 0.5 ? polPV : 0,
       runout: est.runout, runoutText: est.runout === null
         ? `Does not run out by age ${until}` : `Around age ${est.runout}`,
       rows, explanation, plan: est };
@@ -4869,7 +4893,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
 
   root.FreedomHorizon = { defaultAllocation, defaultAllocationPercents, schedule, bucketsAt, horizonReport, FIELDS, BY_ID, STEP_LABELS, defaults, stepsFor, isBlank, currency,
     checkField, growthEngine, moneyRule, planningRule, bucketsRule, incomeSummary, timingIssues, validateAll, validateStep,
-    collegeCost, weddingCost, weddingYear, weddingAgeOf, weddingYearsFromAge, educationYear, incomeStreams, incomeWindow, setClock: fn => { clock = typeof fn === "function" ? fn : () => new Date(); }, horizonText, plan, calculate, earningYears, earningSummary, simulate };
+    collegeCost, weddingCost, weddingYear, weddingAgeOf, weddingYearsFromAge, educationYear, incomeStreams, incomeWindow, policyStreams, policyNow, policyValue, withoutPolicy, setClock: fn => { clock = typeof fn === "function" ? fn : () => new Date(); }, horizonText, plan, calculate, earningYears, earningSummary, simulate };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
 <script id="fh-ui">
@@ -5342,7 +5366,7 @@ ${panel("weddings", `<div class="fh-plan fh-cw"><div class="fh-hrow">${childPill
       $("cbadge").textContent = label(total(FHE.collegeCost)); $("wbadge").textContent = label(total(FHE.weddingCost));
     }
     {
-      const m = Number(FH.v.monthly), inc = FHE.incomeSummary(FH.v).nowAnnual || 0, M3 = typeof cr === "function" ? cr : FHE.currency, nb = $("net");
+      const m = Number(FH.v.monthly), inc = (FHE.incomeSummary(FH.v).nowAnnual || 0) + (FHE.policyNow ? FHE.policyNow() : 0), M3 = typeof cr === "function" ? cr : FHE.currency, nb = $("net");
       if (FH.v.monthly === "" || !Number.isFinite(m)) nb.textContent = "—";
       else { const net = m - inc / 12; nb.textContent = net >= 0 ? `Net spend ${M3(net)}/mo` : `Net surplus ${M3(-net)}/mo`; }
     }
@@ -5515,7 +5539,7 @@ html body .sx .sx-key{margin:0 0 2px;font-size:11px;color:var(--mu)}
     const pill = (l, val, sub) => `<div class="sx-pill"><small>${l}</small><b>${esc(val)}</b><small>${esc(sub)}</small></div>`;
 
     const hero = `<section class="sx-hero ${vd[1]}" aria-label="Retirement health scorecard"${forFile ? "" : ' data-fh-hero="1" role="button" tabindex="0" aria-label="Retirement health scorecard. Tap to tweak inputs"'}>${forFile ? `<div class="sx-ht"><span class="sx-vd">${vd[0]}</span></div>` : ""}
-<div class="sx-big"><div><small>Required</small><b>${M(r.needed)}</b></div><div class="sx-sur"><small>${r.surplus >= 0 ? "Surplus" : "Shortfall"}</small><b>${sgn(r.surplus)}</b></div><div><small>Current corpus</small><b>${M(r.available)}</b></div></div>
+<div class="sx-big"><div><small>Required</small><b>${M(r.needed)}</b></div><div class="sx-sur"><small>${r.surplus >= 0 ? "Surplus" : "Shortfall"}</small><b>${sgn(r.surplus)}</b></div><div><small>Current corpus${r.policyPV > 0 ? " (incl. policy)" : ""}</small><b>${M(r.available)}</b></div></div>
 <div class="sx-bar" role="progressbar" aria-label="Funding coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${bw.toFixed(0)}"><i style="width:${bw}%"></i></div></section>`;
 
     const hasRet = !FHE.isBlank(v.retire);
@@ -5559,11 +5583,12 @@ html body .sx .sx-key{margin:0 0 2px;font-size:11px;color:var(--mu)}
       const k = reduceAge + 1 - age;
       if (cut > 0 && k > 1 && k < years && sch[k]) st.push([`After age ${reduceAge}`, age + k, sch[k].house / 12, `spending drops ${cut}%`]);
       if (years > 1 && sch[years]) st.push(["Final year", until, sch[years].house / 12, String(year + years)]);
-      const inc = Number(v.income) || 0, resv = Number(v.buffer) * Number(v.bufferRoi) / 100 / 12, net = Number(v.monthly) - inc / 12;
+      const pol = (() => { try { return FHE.policyNow(); } catch (e) { return 0; } })(), inc = (Number(v.income) || 0) + pol, resv = Number(v.buffer) * Number(v.bufferRoi) / 100 / 12, net = Number(v.monthly) - inc / 12;
       cash = `<div class="sx-tw"><table class="sx-t"><thead><tr><th scope="col">Spending stage</th><th scope="col">Age</th><th scope="col">Per month</th></tr></thead><tbody>` +
         st.map(x => `<tr><td>${esc(x[0])}<small>${esc(x[3])}</small></td><td>${x[1]}</td><td title="${X(x[2])}">${M(x[2])}</td></tr>`).join("") +
         `</tbody></table></div><div class="sx-tw"><table class="sx-t"><thead><tr><th scope="col">Other monthly money</th><th scope="col">Per month</th></tr></thead><tbody>` +
-        `<tr><td>Other income<small>today's prices</small></td><td>${inc > 0 ? mo(inc) : "None"}</td></tr>` +
+        `<tr><td>Other income<small>today's prices</small></td><td>${(Number(v.income) || 0) > 0 ? mo(Number(v.income) || 0) : "None"}</td></tr>` +
+        (pol > 0 ? `<tr><td>Policy payouts<small>next year, fixed rupees</small></td><td>${mo(pol)}</td></tr>` : "") +
         `<tr><td>Emergency-reserve interest<small>at ${Number(v.bufferRoi)}% a year</small></td><td>${mo(Number(v.buffer) * Number(v.bufferRoi) / 100)}</td></tr>` +
         `<tr><td>${net >= 0 ? "Net spend" : "Net surplus"}<small>spending minus other income</small></td><td class="${net >= 0 ? "" : "sx-hi"}">${M(Math.abs(net))}</td></tr></tbody></table></div>`;
       void resv;
@@ -5590,6 +5615,17 @@ html body .sx .sx-key{margin:0 0 2px;font-size:11px;color:var(--mu)}
       }
       oi = `<section class="oi" aria-label="Other income"><div class="oi-h"><span>Other income</span><span>${head}</span></div>${rows ? `<ul>${rows}</ul>` : ""}<p class="oi-n"><b>Impact:</b> ${note}</p></section>`;
     } catch (e) { oi = ""; }
+    // Policy payouts (Holdings > Policy Payouts): fixed-rupee income the planner already counts, listed with what it saves
+    try {
+      const ps = FHE.policyStreams(), sp = x => esc(String(M(x)));
+      if (ps.length) {
+        const sum = q => Object.keys(q.byYear || {}).reduce((t, y) => t + q.byYear[y], 0);
+        const li = ps.map(q => `<li><span>${esc(String(q.name || "Policy").replace(/^Policy: /, ""))}</span><small>${sp(sum(q))} in all \u00b7 ${q.fromY === q.toY ? q.fromY : q.fromY + "\u2013" + q.toY}</small></li>`).join("");
+        const w = FHE.withoutPolicy(() => FHE.calculate(v)), net = r.needed - (r.policyPV || 0), save = w.ok && r.ok !== false ? w.needed - net : 0, tot = ps.reduce((t, q) => t + sum(q), 0);
+        const note = save > 0.5 ? `Worth ${sp(r.policyPV || 0)} today and counted in your corpus; it cuts the money needed today by ${sp(save)} (${sp(w.needed)} \u2192 ${sp(net)}). Counted as fixed rupees, not inflated.` : "No effect yet: these payouts fall outside the plan years.";
+        oi += `<section class="oi" aria-label="Policy payouts"><div class="oi-h"><span>Policy payouts</span><span>${sp(tot)} from next year${ps.length > 1 ? " \u00b7 " + ps.length + " policies" : ""}</span></div><ul>${li}</ul><p class="oi-n"><b>Impact:</b> ${note}</p></section>`;
+      }
+    } catch (e) { }
     return { hero, actions, pills, pt: ptHTML(v, true), oi, buckets, kids: kidsH, cash, foot, vd };
   }
 
@@ -5922,11 +5958,12 @@ ${msMarkup(v, r)}</main></body></html>`;
     let hb = `<p class="hw-p">You spend <b>${hwM(Number(v.monthly))}</b> a month (${hwM(Number(v.monthly) * 12)} a year) in today's prices. Prices rise <b>${pc(Number(v.houseInflation))}</b> a year, so each year's bill is a little bigger.${reduce} Each year's bill is then divided by (1 + ${pc(roi)}) once for every year away.</p>` +
       tbl(["Year", "That year's spending", "Worth in today's money"], hrows) +
       `<p class="hw-p">Adding up all ${N} years gives <b>${hwM(grossPV)}</b>.</p>`;
-    if (streams.length) {
-      hb += `<p class="hw-p">You also expect other income, which pays part of those bills:</p><ul class="hw-ul">` + streams.map(q => `<li>${esc(q.name ? q.name : streams.length > 1 ? "Income source " + q.k : "Other income")}: ${hwM(q.amount)} a year in today's money, ${q.fromY === q.toY ? "in " + q.fromY : "from " + q.fromY + " to " + q.toY}${q.g ? `, growing ${pc(q.g * 100)} a year` : ""}</li>`).join("") + `</ul>` +
+    const polS = (() => { try { return FHE.policyStreams(); } catch (e) { return []; } })();
+    if (streams.length || polS.length) {
+      hb += `<p class="hw-p">You also expect other income, which pays part of those bills:</p><ul class="hw-ul">` + streams.map(q => `<li>${esc(q.name ? q.name : streams.length > 1 ? "Income source " + q.k : "Other income")}: ${hwM(q.amount)} a year in today's money, ${q.fromY === q.toY ? "in " + q.fromY : "from " + q.fromY + " to " + q.toY}${q.g ? `, growing ${pc(q.g * 100)} a year` : ""}</li>`).join("") + polS.map(q => `<li>${esc(q.name || "Policy payouts")}: ${hwM(Object.keys(q.byYear || {}).reduce((t, y) => t + q.byYear[y], 0))} in all, ${q.fromY === q.toY ? "in " + q.fromY : "from " + q.fromY + " to " + q.toY}, in fixed rupees (not inflated)</li>`).join("") + `</ul>` +
         `<p class="hw-p">In today's money that income is worth <b>${hwM(incPV)}</b>, so it is taken off.</p>`;
     } else hb += `<p class="hw-p">No other income (rent, pension, part-time work) was added, so nothing is taken off.</p>`;
-    h += step("Your household spending", hb, `${hwM(grossPV)}${streams.length ? ` \u2212 ${hwM(incPV)}` : ""} = <b>Needs ${hwM(est.housePV)} today</b>`);
+    h += step("Your household spending", hb, `${hwM(grossPV)}${streams.length || polS.length ? ` \u2212 ${hwM(incPV)}` : ""} = <b>Needs ${hwM(est.housePV)} today</b>`);
 
     // 2. earnings
     const es = FHE.earningSummary(v);
@@ -6242,7 +6279,7 @@ ${msMarkup(v, r)}</main></body></html>`;
     const status = card("Executive Status", "Your financial freedom status",
       `<div class="dz-kp">` +
         kpi("var(--brand)", "Money Needed Today", M(r.needed), "", `Estimated over ${years} years`) +
-        kpi("#10b981", "Money Available Today", M(r.available), "", "Total corpus today", "dz-o") +
+        kpi("#10b981", "Money Available Today", M(r.available), "", r.policyPV > 0 ? `Incl. ${M(r.policyPV)} policy payouts` : "Total corpus today", "dz-o") +
         kpi(r.surplus >= 0 ? "#10b981" : "#f43f5e", r.surplus >= 0 ? "Surplus" : "Shortfall", sg(r.surplus), r.surplus >= 0 ? "dz-o" : "dz-b",
           r.surplus >= 0 ? "Corpus covers the estimated need" : "Corpus falls short of the estimated need", r.surplus >= 0 ? "dz-o" : "dz-b") +
       `</div>
@@ -6388,7 +6425,7 @@ ${status}${ptHTML(v)}${simHTML(v)}${insights}${ms}${alloc}${table}</div>`;
     return `<section class="dz-card${cls ? " " + cls : ""}" id="fh-alloc" aria-labelledby="fh-alloc-h"><div class="dz-ch"><div><p class="dz-ey">Fund Allocation</p><h2 id="fh-alloc-h">Where your corpus is set aside</h2></div><div class="seg" role="group" aria-label="Show allocation for"><button type="button" data-fh-ab="now" aria-pressed="${!at}">Today</button><button type="button" data-fh-ab="at" aria-pressed="${at}">At age ${simAge}</button></div></div>
 <div class="dz-al"><div class="dz-bars">${bars}</div>
 <div class="dz-dn"><div class="dz-dw"><svg viewBox="0 0 220 220" role="img" aria-label="Corpus by purpose donut chart: ${pos.map(x => esc(x.name) + " " + pc(x.value).toFixed(0) + " percent").join(", ")}"><circle cx="110" cy="110" r="82" fill="none" stroke="var(--bd)" stroke-width="24"/>${total < -0.5 ? '<circle cx="110" cy="110" r="70" fill="#dc2626"/>' : ""}${arcs}</svg><div class="dz-dc${total < -0.5 ? " fh-neg" : ""}"><p class="dz-mini">${at ? "Projected" : "Today"}</p><p class="dz-dv">${M(total)}</p><p class="dz-sn">${at ? "at age " + simAge : "set aside today"}</p></div></div></div></div>
-<p class="dz-fn">${at ? `Each purpose is carried to age ${simAge} with its own spending, fees and weddings at your assumed return. Move the Plan Simulation slider to change the age.` : "The amounts you set aside today, by purpose."}${neg.length ? " A shortfall means that purpose is underfunded by then." : ""}</p></section>`;
+<p class="dz-fn">${at ? `Each purpose is carried to age ${simAge} with its own spending, fees and weddings at your assumed return. Move the Plan Simulation slider to change the age.` : "The amounts you set aside today, by purpose."}${neg.length ? " A shortfall means that purpose is underfunded by then." : ""}${items.some(x => x.name === "Policy payouts") ? " Policy payouts are the payouts still to come, valued at your assumed return; each payout received moves into Household." : ""}</p></section>`;
   }
   function allocRefresh(v) {
     const old = document.getElementById("fh-alloc");
@@ -6407,6 +6444,7 @@ ${status}${ptHTML(v)}${simHTML(v)}${insights}${ms}${alloc}${table}</div>`;
 
   /* ---------- Horizon Report (Reports tab): the whole Retirement plan, year by year ---------- */
   function hzColumns(kids, earn) {
+    const hasPol = (() => { try { return FHE.policyStreams().length > 0; } catch (e) { return false; } })();
     const kid = (label, key) => { const o = []; for (let c = 1; c <= kids; c++) o.push({ label: `Child ${c} ${label}`, get: r => r[key][c], zero: true }); return o; };
     const g = [
       { title: "When", cols: [{ label: "S.No", get: r => String(r.__i + 1), txt: 1, sno: 1 }, { label: "Year", get: r => String(r.year), txt: 1 }, { label: "Your age (year-end)", get: r => String(r.age), txt: 1 },
@@ -6429,7 +6467,8 @@ ${status}${ptHTML(v)}${simHTML(v)}${insights}${ms}${alloc}${table}</div>`;
     g.push(
       { title: "Start", cols: [{ label: "Corpus at START of year", get: r => r.start }] },
       { title: "Money coming in", cols: [{ label: "Interest on your investments", get: r => r.interest, sum: 1 }, { label: "Interest on emergency buffer", get: r => r.reserveInterest, zero: true, sum: 1 },
-        { label: "Other income received", get: r => r.income, zero: true, sum: 1 }, { label: "TOTAL MONEY IN this year", get: r => r.moneyIn, bold: 1, sum: 1 }] },
+        { label: "Other income received", get: r => r.income, zero: true, sum: 1 },
+        ...(hasPol ? [{ label: "of which policy payouts", get: r => r.policy, zero: true, sum: 1 }] : []), { label: "TOTAL MONEY IN this year", get: r => r.moneyIn, bold: 1, sum: 1 }] },
       { title: "End", cols: [{ label: "Corpus at END of year", get: r => r.end, bold: 1 }, { label: "Status", get: r => r.status, txt: 1, status: 1 }] });
     // child columns are summed too
     g.forEach(gr => gr.cols.forEach(c => { if (/college fees|wedding$/.test(c.label)) c.sum = 1; }));
