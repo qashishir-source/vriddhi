@@ -84,7 +84,7 @@ Setup: run the latest `supabase/schema.sql` in the Supabase SQL Editor (safe to 
 
 Notes: a snapshot is a copy of the holdings only, not of family members, goals or other settings. Snapshots are saved when you press the button (nothing is saved automatically). The list shows the latest 200 matches.
 
-## 3e. Policy Payouts (v2.6.0)
+## 3e. Policy Payouts (v2.6.0, extended in v2.6.1)
 **Holdings, Policy Payouts** lets each login (adviser or client) record insurance policies that pay money back, for example
 Tata AIG paying ₹94,000 a year for 10 years and then a lump sum. Click **Add policy**, enter the payout amount, frequency
 (monthly, quarterly, half-yearly, yearly), first payout date, duration in years and an optional maturity lump sum. The schedule is
@@ -92,10 +92,15 @@ generated automatically (**Schedule** shows every date, financial year and Paid 
 
 How it counts:
 - Payouts are **income, not investment value**. They never enter a holding, the corpus, interest or any balance, so nothing is counted twice.
-- They show as **Policy payouts** (and **Total income** = interest + payouts) in Yearly View, Monthly View and Interest & Income, including the CSV copy.
+- They show as **Policy payouts** and **Total income** (= interest + payouts) in Yearly View, Monthly View and Interest & Income, including each report's **Copy as CSV**. Both columns can be switched on or off under **Settings, Report columns** (they only appear there once a plan has a policy).
 - The Summary shows them next to **Income at Retirement** (the payouts of the first financial year after retirement).
 - The **Retirement Planner** treats them as fixed-rupee income by calendar year (not inflated, like the policy itself). Untick
   "Include these payouts as income in the Retirement Planner" under the list to leave them out. The planner starts next calendar year, so payouts still to come this year are not included.
+- **Retirement row (v2.6.1):** the row for the year you retire is highlighted yellow across the whole row in every report: Yearly View, Monthly View, Interest & Income, Yearly Savings, the per-holding reports and the Retirement Planner's Year-by-year plan (and on the phone cards), in light and dark mode. A row you click to select shows the selection colour instead, until you click away.
+- **Group switch (v2.6.1):** the Group switch above the holdings list also groups the **Policy Payouts** list, by payout frequency (Yearly, Quarterly and so on), with a header per group showing the count, share and totals. Click a header to collapse it. Switching it off shows the plain list again, on the table and on the phone cards.
+- **Goal Planner > Summary dashboard (v2.6.1):** the corpus includes the policy payouts **received so far, added year by year** (2027: 94,000, 2028: 94,000 and so on; the maturity amount in the year it is paid). Payouts still to come are not counted until the year they are paid, so **Today** shows only what has already been received (nothing for a policy that starts next year) and **At retirement** shows the total received by then. **Current Corpus** and **Corpus at Retirement** show the policy part in their captions, the **Asset Allocation** card has a **Policy payouts** slice and a "Policy payouts by year" line for the selected view, and the goal timeline, gap and readiness use the larger corpus. The holdings, the Yearly/Monthly/Interest reports and the interest figures are unchanged.
+- **Retirement Planner page: corpus and Fund Allocation (v2.6.1):** the payouts still to come are valued today at the plan's expected return and counted in the corpus (**Money Available Today**, **Current corpus**, the Money Buckets list as **Policy payouts, value today**). Fund Allocation (donut and bars, **Today** and **At age**) has its own **Policy payouts** bucket, which shrinks as payouts are received (each one moves into Household). It is the same money the planner already counted as income, so nothing is counted twice and the surplus is unchanged; "Money Needed Today" now shows the need before the policy income, matching the larger corpus. Unticking "Include these payouts as income in the Retirement Planner" removes the policy from the corpus and the allocation as well.
+- **Retirement Planner reports (v2.6.1):** the Summary (and its Download Report) has a **Policy payouts** section listing each policy and what the payouts save in "money needed today"; **Other monthly money** shows the payouts and the Net spend includes them. The year-by-year plan table has an **of which policy payouts** column inside Other income received. **How it works** lists the payouts, so its arithmetic adds up to the money needed.
 - The maturity lump sum is paid one period after the last regular payout (start date + duration). A payout dated before the plan's start year is history and is ignored.
 - Every client plan keeps its own policies (up to 30 per plan). Policies are saved, backed up (Export backup) and synced with the plan.
 
@@ -107,7 +112,7 @@ Plans saved by an older version simply have no policies and open normally.
 retirement income, input cleaning and limits.
 
 ## Version
-The version (v2.6.0) shows next to the Vriddhi name at the top left and under the sign-in box. After you deploy, if you still see an older number or none, the browser is showing a cached copy: hard-refresh (Ctrl+Shift+R) or confirm Netlify finished the new deploy.
+The version (v2.6.1) shows next to the Vriddhi name at the top left and under the sign-in box. After you deploy, if you still see an older number or none, the browser is showing a cached copy: hard-refresh (Ctrl+Shift+R) or confirm Netlify finished the new deploy.
 
 ## 4. Check it works (do all of these before real client data)
 - Open the site, sign in with your adviser email and password.
