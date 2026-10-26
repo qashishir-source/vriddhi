@@ -74,7 +74,7 @@ async function snapCreate(o){var s=await token(),r=await rest('vr_holding_snapsh
 async function snapRemove(id){if(!SNID.test(String(id||'')))throw new Error('Bad snapshot id.');var s=await token();await rest('vr_holding_snapshots?id=eq.'+id+'&user_id=eq.'+s.uid,{method:'DELETE',headers:{Prefer:'return=minimal'}})}
 /* the version shown in the header and on the sign-in screen: change it here only */
 window.VR_VERSION='2.6.1'; /* bump VR_BUILD_NO and VR_BUILD_DATE on every build */
-window.VR_BUILD_NO=119; window.VR_BUILD_DATE='2026-10-24'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
+window.VR_BUILD_NO=121; window.VR_BUILD_DATE='2026-10-24'; window.VR_BUILD_TXT='Version '+window.VR_VERSION+' \u00b7 Build '+window.VR_BUILD_NO+' \u00b7 '+window.VR_BUILD_DATE;
 document.addEventListener('DOMContentLoaded',function(){var v=window.VR_VERSION,w=document.querySelector('.wm');if(w&&!w.querySelector('.vr-ver'))w.insertAdjacentHTML('beforeend',' <span class="vr-ver" title="'+window.VR_BUILD_TXT+'">v'+v+' \u00b7 build '+window.VR_BUILD_NO+'</span>');var f=document.getElementById('lgf');if(f&&!document.querySelector('.vr-ver-lg')){var host=f.querySelector('.lform')||f;host.insertAdjacentHTML('beforeend','<p class="vr-ver-lg">'+window.VR_BUILD_TXT+'</p>')}});
 window.VRSB=cfgOk?{signIn:signIn,signOut:signOut,configured:true,isAdviser:isAdviser,users:usersCall,changePassword:changePassword,snap:{list:snapList,get:snapGet,create:snapCreate,remove:snapRemove},email:function(){var s=ses();return s&&s.email||''}}:null;
 /* clients (non-advisers) do not see the Users tab */
@@ -3238,7 +3238,7 @@ window.intData=function(){const D=calc(S),R=D.rows,A=S.assets,out=[];
 for(let a=2;a<=R.length;a++){const o=R[a-2],c=R[a-1];
 const ad=A.map(function(x){if(x.type==='gratuity')return 0;const k=fyInfo(x,S,a);return k.act?((k.yp?x.add:0)+(x.madd||0)*k.n):0});
 const it=A.map(function(x,i){return c.v[i]-o.v[i]-ad[i]});
-out.push({a:a-1,fy:'FY '+o.year+'-'+String(c.year).slice(-2),age:o.age,o:o,c:c,ad:ad,it:it,pay:c.pay||0,payL:c.payL||0})}
+out.push({a:a-1,fy:'FY '+o.year+'-'+String(c.year).slice(-2),age:c.age,o:o,c:c,   /* age at the END of the financial year, like the Yearly and Monthly views, so the Retired row shows the retirement age */ad:ad,it:it,pay:c.pay||0,payL:c.payL||0})}
 return{rows:out,D:D}};
 window.intCalc=function(r,idx){const s=function(v){return idx.reduce(function(t,i){return t+v[i]},0)};
 const open=s(r.o.v),close=s(r.c.v),add=s(r.ad),intr=s(r.it);return{open:open,close:close,add:add,intr:intr,mi:intr/12,yl:(function(){var b=idx.reduce(function(t,i){return t+r.o.v[i]+(S.assets[i]&&S.assets[i].cmp==='oa'?r.ad[i]:0)},0);return b>0?intr/b:null})()}};
@@ -3254,7 +3254,7 @@ if(!L.length)return'<div class="em">No years match your search.</div>';
 const th=function(k,t){return'<th aria-sort="'+(UI.rk===k?(UI.rd>0?'ascending':'descending'):'none')+'"><button data-rk="'+k+'">'+t+(UI.rk===k?(UI.rd>0?' ▲':' ▼'):'')+'</button></th>'};
 const cls=function(r){return(r.a===ri?'a':'')+(UI.sel===r.a?' sel':'')};
 const PO=S.policies.length>0,tot=L.reduce(function(t,r){t.add+=r.m.add;t.intr+=r.m.intr;t.pay+=r.pay;idx.forEach(function(i){t.it[i]=(t.it[i]||0)+r.it[i]});return t},{add:0,intr:0,pay:0,it:{}});
-return'<table class="rt rs"><tr>'+th('a','S.No')+th('year','Financial<br>year')+th('age','Age<br>(start)')+th('open','Opening<br>(₹ L)')+th('add',"Add'ns<br>(₹ L)")
+return'<table class="rt rs"><tr>'+th('a','S.No')+th('year','Financial<br>year')+th('age','Age<br>(end)')+th('open','Opening<br>(₹ L)')+th('add',"Add'ns<br>(₹ L)")
 +idx.map(function(i){return th('v'+i,escn(A[i].name)+'<br>interest (₹ L)')}).join('')+th('int','Interest<br>earned (₹)')+th('mi','Monthly<br>income (₹)')+th('roi','Yield on<br>opening')+(PO?th('pay','Policy<br>payouts (₹)')+th('ti','Total<br>income (₹)'):'')+th('close','Closing<br>(₹ L)')+'</tr>\n'
 +L.map(function(r){return'<tr data-r="'+r.a+'" class="'+cls(r)+'" tabindex="0" aria-selected="'+(UI.sel===r.a)+'"><td>'+r.a+'</td><td class="nw">'+r.fy+'</td><td class="nw">'+r.age.join(' / ')+'</td><td title="'+f(r.m.open)+'">'+lk(r.m.open)+'</td><td>'+lk(r.m.add)+'</td>'
 +idx.map(function(i){return matDone(A[i],r,2)?'<td>-</td>':'<td title="'+f(r.it[i])+'">'+lk(r.it[i])+'</td>'}).join('')+(allMat(idx,r,2)?'<td class="nw"><b>-</b></td><td class="nw"><b>-</b></td><td>-</td>':'<td class="nw"><b>'+f(r.m.intr)+'</b></td><td class="nw"><b>'+f(r.m.mi)+'</b></td><td>'+pc(r.m.yl)+'</td>')+(PO?'<td class="nw">'+(r.pay>0?f(r.pay):'—')+'</td><td class="nw"><b>'+f((allMat(idx,r,2)?0:r.m.intr)+r.pay)+'</b></td>':'')+'<td title="'+f(r.m.close)+'">'+lk(r.m.close)+'</td></tr>'}).join('')
@@ -4671,15 +4671,6 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
   /* Policy payouts as the planner counts them: fixed rupees by calendar year, from next year on */
   const policyStreams = () => extraStreams(nowYear());
   const policyNow = () => { const cy = nowYear(); return extraStreams(cy).reduce((t, s) => t + ((s.byYear && s.byYear[cy + 1]) || 0), 0); };
-  /* What the policy payouts still to come are worth, brought back to `yrs` plan years from now at the plan's return (same timing as the
-     income in simulate(): the payout of calendar year cy + n is discounted n years). yrs = 0 is today. Counted once: in the corpus here,
-     and as the income that pays the household bills, which is the same money, so the surplus does not change. */
-  function policyValue(inp, yrs) {
-    const cy = nowYear(), rate = num(inp, "roi") / 100, k = yrs || 0;
-    let t = 0;
-    for (const s of extraStreams(cy)) for (const y of Object.keys(s.byYear || {})) { const d = Number(y) - cy - k; if (d > 0) t += s.byYear[y] / (1 + rate) ** d; }
-    return Number.isFinite(t) ? t : 0;
-  }
   const withoutPolicy = fn => { const o = noExtra; noExtra = true; try { return fn(); } finally { noExtra = o; } };
   const incomeLabel = (s, all) => s.name ? s.name + " income" : all.length > 1 ? "Income source " + s.k : "Other income";
   function incomeEvents(streams, year, years, cy) {
@@ -4853,8 +4844,6 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
     for (let c = 1; c <= kids; c++) out.push({ name: `Child ${c} · education`, value: edu[c] }, { name: `Child ${c} · wedding`, value: wed[c] });
     out.push({ name: "Emergency reserve", value: reserve }, { name: "Growth engine", value: grow });
     if (sav > 0) out.push({ name: "Earnings savings fund", value: sav });
-    const polV = policyValue(inp, years);   // payouts still to come at that age (the ones already received sit in Household)
-    if (polV > 0.5) out.push({ name: "Policy payouts", value: polV });
     return out;
   }
 
@@ -4932,12 +4921,10 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
         { name: `Child ${c} · wedding (${currentYear + num(inp, "weddingYears" + c)})`,
           setAside: num(inp, "weddingFund" + c), needed: weddingCost(inp, c).present });
     }
-    const polPV = policyValue(inp, 0);
-    if (polPV > 0.5) rows.push({ name: "Policy payouts, value today", setAside: polPV, needed: polPV, policy: true });
     rows.push({ name: "Emergency reserve, net", setAside: num(inp, "buffer"), needed: est.reservePV },
       { name: "Growth engine · unallocated", setAside: growthEngine(inp), needed: 0 });
     const needed = rows.reduce((s, r) => s + r.needed, 0);
-    const available = num(inp, "corpus") + polPV;   // corpus plus the policy payouts still to come, valued today
+    const available = num(inp, "corpus");   // money you hold today; policy payouts not yet received are not part of it
     const surplus = available - needed;
     if (![needed, available, surplus].every(Number.isFinite))
       return { ok: false, issues: [], status: "Please check unusually large inputs." };
@@ -4948,11 +4935,10 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
       `Over ${until - num(inp, "age")} years, the estimated need today is ${currency(needed)}. ` +
       `With ${currency(available)} available, this is ${surplus >= 0 ? "a surplus" : "a shortfall"} of ` +
       `${currency(Math.abs(surplus))}. The growth engine is ${currency(growthEngine(inp))} of your existing corpus. ` +
-      (polPV > 0.5 ? `The corpus includes ${currency(polPV)} for policy payouts still to come. ` : "") +
       (est.runout === null
         ? `The modeled spendable money remains positive through age ${until}.`
         : `The modeled spendable balance first turns negative around age ${est.runout}.`);
-    return { ok: true, issues: [], status: "", needed, available, surplus, policyPV: polPV > 0.5 ? polPV : 0,
+    return { ok: true, issues: [], status: "", needed, available, surplus,
       runout: est.runout, runoutText: est.runout === null
         ? `Does not run out by age ${until}` : `Around age ${est.runout}`,
       rows, explanation, plan: est };
@@ -4960,7 +4946,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
 
   root.FreedomHorizon = { defaultAllocation, defaultAllocationPercents, schedule, bucketsAt, horizonReport, FIELDS, BY_ID, STEP_LABELS, defaults, stepsFor, isBlank, currency,
     checkField, growthEngine, moneyRule, planningRule, bucketsRule, incomeSummary, timingIssues, validateAll, validateStep,
-    collegeCost, weddingCost, weddingYear, weddingAgeOf, weddingYearsFromAge, educationYear, incomeStreams, incomeWindow, policyStreams, policyNow, policyValue, withoutPolicy, setClock: fn => { clock = typeof fn === "function" ? fn : () => new Date(); }, horizonText, plan, calculate, earningYears, earningSummary, simulate };
+    collegeCost, weddingCost, weddingYear, weddingAgeOf, weddingYearsFromAge, educationYear, incomeStreams, incomeWindow, policyStreams, policyNow, withoutPolicy, setClock: fn => { clock = typeof fn === "function" ? fn : () => new Date(); }, horizonText, plan, calculate, earningYears, earningSummary, simulate };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
 <script id="fh-ui">
@@ -5606,7 +5592,7 @@ html body .sx .sx-key{margin:0 0 2px;font-size:11px;color:var(--mu)}
     const pill = (l, val, sub) => `<div class="sx-pill"><small>${l}</small><b>${esc(val)}</b><small>${esc(sub)}</small></div>`;
 
     const hero = `<section class="sx-hero ${vd[1]}" aria-label="Retirement health scorecard"${forFile ? "" : ' data-fh-hero="1" role="button" tabindex="0" aria-label="Retirement health scorecard. Tap to tweak inputs"'}>${forFile ? `<div class="sx-ht"><span class="sx-vd">${vd[0]}</span></div>` : ""}
-<div class="sx-big"><div><small>Required</small><b>${M(r.needed)}</b></div><div class="sx-sur"><small>${r.surplus >= 0 ? "Surplus" : "Shortfall"}</small><b>${sgn(r.surplus)}</b></div><div><small>Current corpus${r.policyPV > 0 ? " (incl. policy)" : ""}</small><b>${M(r.available)}</b></div></div>
+<div class="sx-big"><div><small>Required</small><b>${M(r.needed)}</b></div><div class="sx-sur"><small>${r.surplus >= 0 ? "Surplus" : "Shortfall"}</small><b>${sgn(r.surplus)}</b></div><div><small>Current corpus</small><b>${M(r.available)}</b></div></div>
 <div class="sx-bar" role="progressbar" aria-label="Funding coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${bw.toFixed(0)}"><i style="width:${bw}%"></i></div></section>`;
 
     const hasRet = !FHE.isBlank(v.retire);
@@ -5655,7 +5641,7 @@ html body .sx .sx-key{margin:0 0 2px;font-size:11px;color:var(--mu)}
         st.map(x => `<tr><td>${esc(x[0])}<small>${esc(x[3])}</small></td><td>${x[1]}</td><td title="${X(x[2])}">${M(x[2])}</td></tr>`).join("") +
         `</tbody></table></div><div class="sx-tw"><table class="sx-t"><thead><tr><th scope="col">Other monthly money</th><th scope="col">Per month</th></tr></thead><tbody>` +
         `<tr><td>Other income<small>today's prices</small></td><td>${(Number(v.income) || 0) > 0 ? mo(Number(v.income) || 0) : "None"}</td></tr>` +
-        (pol > 0 ? `<tr><td>Policy payouts<small>next year, fixed rupees</small></td><td>${mo(pol)}</td></tr>` : "") +
+        (pol > 0 ? `<tr><td>Policy payouts<small>due next year, fixed rupees</small></td><td>${mo(pol)}</td></tr>` : "") +
         `<tr><td>Emergency-reserve interest<small>at ${Number(v.bufferRoi)}% a year</small></td><td>${mo(Number(v.buffer) * Number(v.bufferRoi) / 100)}</td></tr>` +
         `<tr><td>${net >= 0 ? "Net spend" : "Net surplus"}<small>spending minus other income</small></td><td class="${net >= 0 ? "" : "sx-hi"}">${M(Math.abs(net))}</td></tr></tbody></table></div>`;
       void resv;
@@ -5687,10 +5673,10 @@ html body .sx .sx-key{margin:0 0 2px;font-size:11px;color:var(--mu)}
       const ps = FHE.policyStreams(), sp = x => esc(String(M(x)));
       if (ps.length) {
         const sum = q => Object.keys(q.byYear || {}).reduce((t, y) => t + q.byYear[y], 0);
-        const li = ps.map(q => `<li><span>${esc(String(q.name || "Policy").replace(/^Policy: /, ""))}</span><small>${sp(sum(q))} in all \u00b7 ${q.fromY === q.toY ? q.fromY : q.fromY + "\u2013" + q.toY}</small></li>`).join("");
-        const w = FHE.withoutPolicy(() => FHE.calculate(v)), net = r.needed - (r.policyPV || 0), save = w.ok && r.ok !== false ? w.needed - net : 0, tot = ps.reduce((t, q) => t + sum(q), 0);
-        const note = save > 0.5 ? `Worth ${sp(r.policyPV || 0)} today and counted in your corpus; it cuts the money needed today by ${sp(save)} (${sp(w.needed)} \u2192 ${sp(net)}). Counted as fixed rupees, not inflated.` : "No effect yet: these payouts fall outside the plan years.";
-        oi += `<section class="oi" aria-label="Policy payouts"><div class="oi-h"><span>Policy payouts</span><span>${sp(tot)} from next year${ps.length > 1 ? " \u00b7 " + ps.length + " policies" : ""}</span></div><ul>${li}</ul><p class="oi-n"><b>Impact:</b> ${note}</p></section>`;
+        const li = ps.map(q => `<li><span>${esc(String(q.name || "Policy").replace(/^Policy: /, ""))}</span><small>${sp(sum(q))} to receive \u00b7 ${q.fromY === q.toY ? q.fromY : q.fromY + "\u2013" + q.toY}</small></li>`).join("");
+        const w = FHE.withoutPolicy(() => FHE.calculate(v)), save = w.ok && r.ok !== false ? w.needed - r.needed : 0, tot = ps.reduce((t, q) => t + sum(q), 0), y0 = Math.min(...ps.map(q => q.fromY)), y1 = Math.max(...ps.map(q => q.toY)), span = y0 === y1 ? y0 : y0 + "\u2013" + y1;
+        const note = save > 0.5 ? `Not part of your corpus until you receive it. Each payout is counted as income in the year it arrives, which cuts the money needed today by ${sp(save)} (${sp(w.needed)} \u2192 ${sp(r.needed)}). Fixed rupees, not inflated.` : "No effect yet: these payouts fall outside the plan years.";
+        oi += `<section class="oi" aria-label="Policy payouts"><div class="oi-h"><span>Policy payouts</span><span>${sp(tot)} still to receive \u00b7 ${span}${ps.length > 1 ? " \u00b7 " + ps.length + " policies" : ""}</span></div><ul>${li}</ul><p class="oi-n"><b>Impact:</b> ${note}</p></section>`;
       }
     } catch (e) { }
     return { hero, actions, pills, pt: ptHTML(v, true), oi, buckets, kids: kidsH, cash, foot, vd };
@@ -6346,7 +6332,7 @@ ${msMarkup(v, r)}</main></body></html>`;
     const status = card("Executive Status", "Your financial freedom status",
       `<div class="dz-kp">` +
         kpi("var(--brand)", "Money Needed Today", M(r.needed), "", `Estimated over ${years} years`) +
-        kpi("#10b981", "Money Available Today", M(r.available), "", r.policyPV > 0 ? `Incl. ${M(r.policyPV)} policy payouts` : "Total corpus today", "dz-o") +
+        kpi("#10b981", "Money Available Today", M(r.available), "", "Total corpus today", "dz-o") +
         kpi(r.surplus >= 0 ? "#10b981" : "#f43f5e", r.surplus >= 0 ? "Surplus" : "Shortfall", sg(r.surplus), r.surplus >= 0 ? "dz-o" : "dz-b",
           r.surplus >= 0 ? "Corpus covers the estimated need" : "Corpus falls short of the estimated need", r.surplus >= 0 ? "dz-o" : "dz-b") +
       `</div>
@@ -6492,7 +6478,7 @@ ${status}${ptHTML(v)}${simHTML(v)}${insights}${ms}${alloc}${table}</div>`;
     return `<section class="dz-card${cls ? " " + cls : ""}" id="fh-alloc" aria-labelledby="fh-alloc-h"><div class="dz-ch"><div><p class="dz-ey">Fund Allocation</p><h2 id="fh-alloc-h">Where your corpus is set aside</h2></div><div class="seg" role="group" aria-label="Show allocation for"><button type="button" data-fh-ab="now" aria-pressed="${!at}">Today</button><button type="button" data-fh-ab="at" aria-pressed="${at}">At age ${simAge}</button></div></div>
 <div class="dz-al"><div class="dz-bars">${bars}</div>
 <div class="dz-dn"><div class="dz-dw"><svg viewBox="0 0 220 220" role="img" aria-label="Corpus by purpose donut chart: ${pos.map(x => esc(x.name) + " " + pc(x.value).toFixed(0) + " percent").join(", ")}"><circle cx="110" cy="110" r="82" fill="none" stroke="var(--bd)" stroke-width="24"/>${total < -0.5 ? '<circle cx="110" cy="110" r="70" fill="#dc2626"/>' : ""}${arcs}</svg><div class="dz-dc${total < -0.5 ? " fh-neg" : ""}"><p class="dz-mini">${at ? "Projected" : "Today"}</p><p class="dz-dv">${M(total)}</p><p class="dz-sn">${at ? "at age " + simAge : "set aside today"}</p></div></div></div></div>
-<p class="dz-fn">${at ? `Each purpose is carried to age ${simAge} with its own spending, fees and weddings at your assumed return. Move the Plan Simulation slider to change the age.` : "The amounts you set aside today, by purpose."}${neg.length ? " A shortfall means that purpose is underfunded by then." : ""}${items.some(x => x.name === "Policy payouts") ? " Policy payouts are the payouts still to come, valued at your assumed return; each payout received moves into Household." : ""}</p></section>`;
+<p class="dz-fn">${at ? `Each purpose is carried to age ${simAge} with its own spending, fees and weddings at your assumed return. Move the Plan Simulation slider to change the age.` : "The amounts you set aside today, by purpose."}${neg.length ? " A shortfall means that purpose is underfunded by then." : ""}</p></section>`;
   }
   function allocRefresh(v) {
     const old = document.getElementById("fh-alloc");
