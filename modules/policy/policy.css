@@ -1,0 +1,105 @@
+@charset "utf-8";
+/* Vriddhi · Policies module · styles  (modules/policy/policy.css) — theme-aware: only app variables are used */
+:root{--vp-pay:#16a34a;--vp-prem:#7c3aed;--vp-mat:#d97706;--vp-late:#dc2626}
+
+/* ---- shell: page bar, bottom navigation (six sections) ---- */
+html body #vp-pg{display:block;min-width:0}
+html body .vp-bar{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 12px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:3px;width:max-content;max-width:100%}
+/* !important: the Enterprise skin paints every button white with a very specific rule */
+html body .vp-bar button,html body #vp-pg .seg button{background:transparent!important;color:var(--tx)!important;border:0;min-height:34px;padding:4px 14px;border-radius:8px;font-weight:600;box-shadow:none}
+html body .vp-bar button[aria-pressed=true],html body #vp-pg .seg button[aria-pressed=true]{background:var(--ac)!important;color:var(--ac2)!important;box-shadow:none}
+html body #vp-pg .seg{background:var(--card);border:1px solid var(--bd);flex-wrap:wrap}
+html body .rp2-nav.vp-nav{grid-template-columns:repeat(6,1fr);width:min(100%,680px)}
+html body .rp2-nav.vp-nav button{font-size:10.5px;min-width:0;padding:4px 2px}
+html body .rp2-nav.vp-nav button span:first-child{font-size:18px}
+@media (min-width:900px){html body .rp2-nav.vp-nav{display:none}}      /* the top bar is enough on wide screens */
+@media (max-width:899px){html body .vp-bar{display:none}}                /* on phones the bottom bar is the navigation */
+html body #vp-pg .rph{align-items:flex-start;gap:12px}
+html body #vp-pg .rph .rpr{display:flex;gap:8px;flex-wrap:wrap}
+html body #vp-pg .vp-sub{margin:2px 0 0;color:var(--mu);font-size:14px}
+
+/* ---- dashboard ---- */
+html body .vp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:0 0 14px}
+@media (min-width:700px){html body .vp-kpis.n6{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (min-width:1000px){html body .vp-kpis.n5{grid-template-columns:repeat(5,minmax(0,1fr))}}
+html body .vp-kpi{border:1px solid var(--bd);border-radius:14px;padding:12px 14px;background:var(--card);min-width:0}
+html body .vp-kpi .vp-k{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);font-weight:700}
+html body .vp-kpi .vp-v{font-size:22px;font-weight:800;margin:4px 0 2px;overflow-wrap:anywhere}
+html body .vp-kpi .vp-s{font-size:12.5px;color:var(--mu);overflow-wrap:anywhere}
+html body .vp-kpi.late{border-color:var(--vp-late)}html body .vp-kpi.late .vp-v{color:var(--vp-late)}
+html body .vp-alert{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--vp-late);background:color-mix(in srgb,var(--vp-late) 9%,var(--card));border-radius:12px;padding:10px 14px;margin:0 0 14px;font-size:14px}
+html body .vp-alert button{margin-left:auto}
+html body .vp-two{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;align-items:start}
+@media (max-width:899px){html body .vp-two{grid-template-columns:minmax(0,1fr)}}
+html body .vp-card{border:1px solid var(--bd);border-radius:14px;background:var(--card);padding:14px 16px;margin:0 0 14px;min-width:0}
+html body .vp-card h2{margin:0 0 4px;font-size:18px}
+html body .vp-card .vp-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+html body .vp-leg{display:flex;gap:12px;font-size:12.5px;color:var(--mu);flex-wrap:wrap}
+html body .vp-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+/* bars: payouts and premiums by financial year */
+html body .vp-bars{display:flex;align-items:flex-end;gap:6px;height:170px;overflow-x:auto;padding:6px 2px 0;border-bottom:1px solid var(--bd)}
+html body .vp-bg{flex:1 0 34px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:34px}
+html body .vp-bp{display:flex;align-items:flex-end;gap:3px;height:100%;width:100%;justify-content:center}
+html body .vp-b{width:42%;min-height:2px;border-radius:4px 4px 0 0}
+html body .vp-b.pay{background:var(--vp-pay)}html body .vp-b.prem{background:var(--vp-prem)}html body .vp-b.mat{background:var(--vp-mat)}
+html body .vp-bl{display:flex;gap:6px;overflow-x:auto;padding-top:4px}
+html body .vp-bl span{flex:1 0 34px;min-width:34px;text-align:center;font-size:10.5px;color:var(--mu)}
+
+/* coming-up list */
+html body .vp-up{list-style:none;margin:0;padding:0}
+html body .vp-up li{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--bd)}
+html body .vp-up li:last-child{border-bottom:0}
+html body .vp-up .vp-ic{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;background:color-mix(in srgb,var(--vp-prem) 14%,var(--card))}
+html body .vp-up .vp-ic.pay{background:color-mix(in srgb,var(--vp-pay) 16%,var(--card))}html body .vp-up .vp-ic.mat{background:color-mix(in srgb,var(--vp-mat) 18%,var(--card))}
+html body .vp-up .vp-tt{flex:1;min-width:0}html body .vp-up .vp-tt b{display:block;overflow-wrap:anywhere}html body .vp-up .vp-tt small{color:var(--mu)}
+html body .vp-up .vp-ta{flex:none;text-align:right;font-weight:700}html body .vp-up .vp-ta small{display:block;color:var(--mu);font-weight:400}
+
+/* status chips */
+html body .vp-chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+html body .vp-chip.upcoming{color:var(--mu);border-color:var(--bd)}
+html body .vp-chip.paying{color:var(--vp-prem);background:color-mix(in srgb,var(--vp-prem) 12%,var(--card))}
+html body .vp-chip.payout{color:var(--vp-pay);background:color-mix(in srgb,var(--vp-pay) 13%,var(--card))}
+html body .vp-chip.matured{color:var(--mu);background:color-mix(in srgb,var(--mu) 14%,var(--card))}
+html body .vp-chip.overdue{color:var(--vp-late);background:color-mix(in srgb,var(--vp-late) 12%,var(--card))}
+html body .vp-chip.soon{color:var(--vp-mat);background:color-mix(in srgb,var(--vp-mat) 14%,var(--card))}
+html body .vp-chip.paid{color:var(--vp-pay);background:color-mix(in srgb,var(--vp-pay) 13%,var(--card))}
+
+/* toolbars, tables */
+html body .vp-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+html body .vp-tools input[type=search],html body .vp-tools select{min-height:38px}
+html body .vp-tools input[type=search]{flex:1 1 260px;min-width:0;width:auto}
+html body .vp-tools select{flex:0 0 auto;width:auto;max-width:100%}
+html body .vp-tools .tbs{flex:0 0 auto;width:auto}
+html body .vp-tw{overflow-x:auto}
+html body table.vp-t{width:100%;border-collapse:collapse;font-size:14px}
+html body table.vp-t th{text-align:left;font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--mu);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap;background:transparent;position:static}
+html body table.vp-t td{padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top;background:transparent;position:static}
+html body table.vp-t tr:last-child td{border-bottom:0}
+html body table.vp-t tr.t td{font-weight:700;border-top:2px solid var(--bd)}
+html body table.vp-t td,html body table.vp-t th{text-align:left}
+html body table.vp-t td.vp-r,html body table.vp-t th.vp-r{text-align:right}
+html body table.vp-t .mu{font-size:12.5px}
+html body table.vp-t td .vp-prog{width:100%}
+html body .vp-prog{height:6px;border-radius:99px;background:color-mix(in srgb,var(--mu) 18%,var(--card));overflow:hidden;min-width:70px}
+html body .vp-prog i{display:block;height:100%;background:var(--vp-prem)}
+html body .vp-more{display:flex;justify-content:center;padding:10px 0 2px}
+html body .vp-empty{text-align:center;padding:26px 14px}
+html body .vp-empty h2{margin:0 0 6px}
+
+/* sharing switches */
+html body .vp-sw{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--bd)}
+html body .vp-sw:first-of-type{border-top:0}
+html body .vp-sw input{flex:none;width:20px;height:20px;margin-top:2px}
+html body .vp-sw b{display:block}html body .vp-sw small{color:var(--mu)}
+
+/* ---- policy form + lists (moved here from the Holdings screen) ---- */
+html body #pol .hcard .vv{flex:none;text-align:right}html body #pol .hcard .vv b{white-space:nowrap}html body #pol .hcard .hh{align-items:flex-start;gap:10px}html body #pol .hcard .tb .tbs{white-space:nowrap;padding-left:6px;padding-right:6px;min-width:0;flex:1 1 0}
+html body #pol .ht td .mu,html body #pol .hcard .mu{font-size:12px}html body #pol .ht table th{font-weight:700}
+html body .pol-sch h2{margin:0 0 6px;font-size:20px}html body .pol-sch .rsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}html body .pol-sch .rsum>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--bd);border-radius:10px}
+html body .pol-sch .tw{max-height:52vh;overflow:auto}
+@media (pointer:coarse){html body dialog.hf #pfm input:not([type=checkbox]):not([type=radio]),html body dialog.hf #pfm select{height:44px;min-height:44px}html body #pol .tbs,html body #vp-pg #padd{min-height:44px}html body #pol .tbs{min-width:44px}}
+@media (max-width:720px){html body dialog.hf #pfm input:not([type=checkbox]):not([type=radio]),html body dialog.hf #pfm select{height:44px;min-height:44px}html body #pfm .tb button{min-height:44px}html body #pol .tb{display:flex;flex-wrap:wrap;gap:8px}html body #pol .tb .tbs{min-height:44px;flex:1 1 30%}html body .pol-sch .tw{max-height:46vh}}
+@media (max-width:420px){html body #m .vp-kpis{grid-template-columns:1fr 1fr}html body .vp-kpi .vp-v{font-size:18px}}
+html body #pfm .pvbox{margin:8px 0}
+html body #pfm .hs h3 small{font-weight:400;color:var(--mu);margin-left:6px}
