@@ -6,9 +6,12 @@
 try{if(sessionStorage.getItem('fs-auth')!=='1'&&localStorage.getItem('vr-rm')==='1'){var rmS=localStorage.getItem('vr-sb-remember'),rmO=rmS&&JSON.parse(rmS);if(rmO&&rmO.rt&&rmO.uid){sessionStorage.setItem('vr-sb',rmS);sessionStorage.setItem('fs-auth','1')}}}catch(e){}
 try{if(sessionStorage.getItem('fs-auth')!=='1')document.documentElement.classList.add('lk')}catch(e){document.documentElement.classList.add('lk')}</script>
 <link rel="stylesheet" href="modules/policy/policy.css?v=122">
+<link rel="stylesheet" href="modules/retirement-calc/rc.css?v=1">
 <script src="config.js"></script>
 <script src="modules/policy/policy-core.js?v=122" charset="utf-8"></script>
 <script src="modules/policy/policy-ui.js?v=122" charset="utf-8"></script>
+<script src="modules/retirement-calc/rc-core.js?v=1" charset="utf-8"></script>
+<script src="modules/retirement-calc/rc-ui.js?v=1" charset="utf-8"></script>
 <script id="vr-prod">
 /* Production build: real sign-in and cloud storage with Supabase (https://supabase.com).
    This replaces the in-page sign-in and the claude.ai storage. Settings come from config.js. */
