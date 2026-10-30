@@ -1,0 +1,39 @@
+@charset "utf-8";
+/* Vriddhi · Retirement Calculator module · styles (modules/retirement-calc/rc.css) — theme-aware: only app variables are used */
+:root{--rc-ok:#16a34a;--rc-late:#dc2626;--rc-warn:#d97706}
+html body #rc-pg{display:block;min-width:0}
+html body #rc-pg .rph{align-items:flex-start;gap:12px}
+html body #rc-pg .rph .rpr{display:flex;gap:8px;flex-wrap:wrap}
+html body #rc-pg .rc-sub{margin:2px 0 0;color:var(--mu);font-size:14px;max-width:70ch}
+html body .rc-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:899px){html body .rc-two{grid-template-columns:minmax(0,1fr)}}
+html body .rc-card{border:1px solid var(--bd);border-radius:14px;background:var(--card);padding:14px 16px;margin:0 0 14px;min-width:0}
+html body .rc-card h2{margin:0 0 6px;font-size:18px}
+html body .rc-form section{margin:0 0 14px}html body .rc-form section:last-child{margin:0}
+html body .rc-form h3{margin:0 0 8px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--mu)}
+html body .rc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+html body .rc-f{min-width:0}
+html body .rc-f label{display:block;font-weight:600;font-size:13.5px;margin-bottom:4px}
+html body .rc-f small{display:block;color:var(--mu);font-size:12px;margin-top:3px}
+html body .rc-in{position:relative}
+html body .rc-in input{width:100%;box-sizing:border-box;min-height:40px;padding:6px 40px 6px 10px}
+html body .rc-in span{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--mu);font-size:12.5px;pointer-events:none}
+html body .rc-kpis{display:grid;gap:10px;margin:0 0 14px}
+html body .rc-kpi{border:1px solid var(--bd);border-radius:14px;padding:12px 14px;background:var(--card);min-width:0}
+html body .rc-kpi .rc-k{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);font-weight:700}
+html body .rc-kpi .rc-v{font-size:26px;font-weight:800;margin:4px 0 2px;overflow-wrap:anywhere}
+html body .rc-kpi .rc-v small{font-size:14px;font-weight:600;color:var(--mu)}
+html body .rc-kpi .rc-s{font-size:12.5px;color:var(--mu)}
+html body .rc-kpi.ok{border-color:var(--rc-ok)}html body .rc-kpi.ok .rc-v{color:var(--rc-ok)}
+html body .rc-kpi.late{border-color:var(--rc-late)}html body .rc-kpi.late .rc-v{color:var(--rc-late);font-size:20px}
+html body .rc-tw{overflow-x:auto}
+html body .rc-t{width:100%;border-collapse:collapse;font-size:14px}
+html body .rc-t td{padding:8px 4px;border-bottom:1px solid var(--bd)}
+html body .rc-t td:last-child{text-align:right;font-weight:600;white-space:nowrap}
+html body .rc-t tr.rc-b td{font-weight:800}html body .rc-t tr.rc-ok td:last-child{color:var(--rc-ok)}
+html body .rc-t tr:last-child td{border-bottom:0}
+html body .rc-err,html body .rc-adv ul{margin:6px 0 0;padding-left:20px;font-size:14px}
+html body .rc-err{color:var(--rc-late)}
+html body .rc-adv{border-color:var(--rc-warn);background:color-mix(in srgb,var(--rc-warn) 8%,var(--card))}
+html body .rc-empty p{margin:0}
+html body .rc-note{color:var(--mu);font-size:12.5px;margin:0 0 16px}
